@@ -39,15 +39,29 @@ go run ./cmd/audience-keeper
 
 L'état est **en mémoire** : redémarrer le serveur efface la séance. Pense à l'**Export CSV** en fin de cours.
 
-### Docker
+### Binaire, Docker ou Kubernetes
+
+Chaque build de `main` publie la **même version `0.0.N`** sous trois formes :
 
 ```sh
-docker build -t audience-keeper .
-docker run -p 8080:8080 -e AK_ADMIN_TOKEN=... -e AK_MCP_TOKEN=... audience-keeper
+# Binaire (laptop) : release GitHub v0.0.N (Linux, macOS, Windows ; amd64 et arm64)
+./audience-keeper_linux_amd64
+
+# Image multi-arch
+docker run -p 8080:8080 -e AK_ADMIN_TOKEN=... -e AK_MCP_TOKEN=... ghcr.io/jijins1/audience-keeper:0.0.N
+
+# Chart Helm OCI : le chart 0.0.N déploie l'image 0.0.N
+kubectl create secret generic audience-keeper-tokens -n quiz \
+  --from-literal=AK_ADMIN_TOKEN="$(openssl rand -hex 24)" \
+  --from-literal=AK_MCP_TOKEN="$(openssl rand -hex 24)"
+helm install ak oci://ghcr.io/jijins1/charts/audience-keeper --version 0.0.N -n quiz \
+  --set auth.existingSecret=audience-keeper-tokens \
+  --set ingress.enabled=true --set ingress.host=quiz.example.org
 ```
 
-Image publiée par la CI GitHub (linux/amd64 et linux/arm64) :
-`docker pull ghcr.io/<owner>/<repo>:latest`.
+Il n'y a **pas de tag `latest`** : une version publiée est immuable, sinon un nœud qui a l'image en
+cache (`IfNotPresent`) ne la retirerait jamais. Le chart impose un pod unique et la stratégie
+`Recreate`, car la séance vit en mémoire. Voir `charts/audience-keeper/values.yaml`.
 
 Derrière un reverse proxy, transmets `X-Forwarded-Proto` (cookies `Secure`, URL du QR code) et
 l'upgrade WebSocket sur `/ws` et `/admin/ws`.
@@ -158,16 +172,27 @@ Exemples de prompts :
 ## Développement
 
 ```sh
-go test -race -cover ./...
+make help        # cibles : test, lint, image, image-push, chart-push, dist
+make test
 ```
 
-La CI (`.github/workflows/docker.yml`) lance `go vet` et les tests, puis construit l'image :
-- **Pull requests** : build seulement, rien n'est poussé.
-- **`main`** : push sur GHCR avec les tags `main`, `latest` et `sha-…`.
-- **Tag `v1.2.3`** : tags `1.2.3` et `1.2`, et la version est injectée dans le binaire.
+La CI (`.github/workflows/ci.yml`) suit le même mode que warden :
+
+1. **Vérifications**, sur chaque PR et sur `main` :
+   - **build** : gofmt, `go mod tidy` sans diff, build, vet, compilation croisée ;
+   - **lint** : golangci-lint v2.12.2, figé ;
+   - **tests** : `go test -race` ;
+   - **image** : démarrage en lecture seule et non-root, en-têtes de sécurité, CSP sans script
+     inline, routes privées, aucun CDN ;
+   - **chart** : ressources rendues vérifiées par `build/verif/chart.py`.
+2. **Publication**, sur `main` seulement et après tout le reste, en version `0.0.<run_number>` :
+   l'image multi-arch, le chart OCI et une release GitHub des binaires, via les mêmes cibles
+   `make` qu'en local.
 
 ```
 cmd/audience-keeper   point d'entrée, configuration par variables d'environnement
+charts/audience-keeper chart Helm (pod unique, durcissement non configurable)
+build/verif           vérifications CI sur les artefacts rendus
 internal/classroom    domaine en mémoire : élèves, questions, réponses, signaux, stats, règles
 internal/web          HTTP, WebSocket (hub temps réel), auth, pages embarquées (static/)
 internal/mcpserver    tools MCP

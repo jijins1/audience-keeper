@@ -298,7 +298,7 @@ func (c *Classroom) csvRows() [][]string {
 			if !a.Submitted {
 				val = a.Draft
 			}
-			if !(q.Type == TypeNumber && a.Submitted) { // normalised numbers are safe and must stay numeric
+			if q.Type != TypeNumber || !a.Submitted { // normalised numbers are safe and must stay numeric
 				val = csvSafe(val)
 			}
 			rows = append(rows, []string{q.ID, csvSafe(q.Title), string(q.Type), a.StudentID, csvSafe(c.students[a.StudentID].Pseudo), val,

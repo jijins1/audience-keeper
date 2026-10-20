@@ -1,0 +1,18 @@
+apiVersion: v2
+name: audience-keeper
+description: >-
+  Quiz en direct pour les cours : questions posées à la volée, saisie des
+  étudiants en temps réel, diaporamas reveal.js diffusés, assistance de Claude par MCP.
+type: application
+
+# Version de la CHART. La CI la remplace à la publication par la version du
+# build (0.0.N), la même que l'image.
+version: 0.1.0
+
+# Version du PRODUIT, et tag d'image par défaut : chart et image restent
+# d'accord sans rien tenir à la main.
+appVersion: "dev"
+
+keywords: [quiz, classroom, reveal.js, mcp]
+home: https://github.com/jijins1/audience-keeper
+sources: [https://github.com/jijins1/audience-keeper]

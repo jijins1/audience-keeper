@@ -58,7 +58,10 @@ func (a *adminAuth) login(w http.ResponseWriter, r *http.Request, token string) 
 	}
 	a.session[id] = now.Add(adminSessionTTL)
 	a.mu.Unlock()
-	http.SetCookie(w, &http.Cookie{
+	// Secure suit le transport : en HTTP simple (wifi de salle, laptop) un cookie
+	// Secure ne serait jamais renvoyé et la connexion deviendrait impossible.
+	// HttpOnly et SameSite=Strict, eux, sont toujours posés.
+	http.SetCookie(w, &http.Cookie{ //nolint:gosec // G124: Secure dépend volontairement du transport, voir ci-dessus
 		Name:     adminCookie,
 		Value:    id,
 		Path:     "/",
@@ -76,7 +79,8 @@ func (a *adminAuth) logout(w http.ResponseWriter, r *http.Request) {
 		delete(a.session, c.Value)
 		a.mu.Unlock()
 	}
-	http.SetCookie(w, &http.Cookie{Name: adminCookie, Value: "", Path: "/", MaxAge: -1, HttpOnly: true, Secure: isHTTPS(r), SameSite: http.SameSiteStrictMode})
+	http.SetCookie(w, &http.Cookie{Name: adminCookie, Value: "", Path: "/", MaxAge: -1, //nolint:gosec // G124: même règle que login
+		HttpOnly: true, Secure: isHTTPS(r), SameSite: http.SameSiteStrictMode})
 }
 
 func (a *adminAuth) valid(r *http.Request) bool {

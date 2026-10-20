@@ -1,0 +1,88 @@
+# Valeurs par défaut d'audience-keeper.
+#
+# ┌──────────────────────────────────────────────────────────────────────────┐
+# │ CE QUI N'EST PAS ICI EST DÉLIBÉRÉMENT ABSENT.                            │
+# │                                                                          │
+# │ Ne sont PAS configurables :                                              │
+# │   - le nombre de réplicas (1) et la stratégie `Recreate`. Toute la       │
+# │     séance vit en mémoire du processus : deux pods seraient deux salles  │
+# │     de classe distinctes, et un étudiant tomberait dans l'une ou l'autre │
+# │     selon la requête. `RollingUpdate` en ferait coexister deux le temps  │
+# │     du déploiement ;                                                     │
+# │   - le `securityContext` : non-root, racine en lecture seule, capacités  │
+# │     retirées, seccomp. Le binaire n'écrit rien sur disque ;              │
+# │   - les jetons dans ce fichier. Un values.yaml finit dans un dépôt git : │
+# │     les jetons viennent d'un Secret créé à part (`auth.existingSecret`). │
+# └──────────────────────────────────────────────────────────────────────────┘
+
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  registry: ghcr.io/jijins1
+  repository: audience-keeper
+  # Vide, `.Chart.AppVersion` s'applique : le chart 0.0.N déploie l'image 0.0.N.
+  tag: ""
+  pullPolicy: IfNotPresent
+  # À poser avant l'installation si le package GHCR est privé (son défaut) :
+  #   kubectl create secret docker-registry ghcr-pull-secret -n <ns> \
+  #     --docker-server=ghcr.io --docker-username=<compte> \
+  #     --docker-password=<jeton read:packages>
+  pullSecrets: []
+
+auth:
+  # OBLIGATOIRE. Un Secret existant portant :
+  #   AK_ADMIN_TOKEN  (≥ 16 caractères) — connexion enseignant
+  #   AK_MCP_TOKEN    (optionnel, ≥ 16 caractères, différent) — endpoint /mcp pour Claude
+  #
+  #   kubectl create secret generic audience-keeper-tokens -n <ns> \
+  #     --from-literal=AK_ADMIN_TOKEN="$(openssl rand -hex 24)" \
+  #     --from-literal=AK_MCP_TOKEN="$(openssl rand -hex 24)"
+  existingSecret: ""
+
+mcp:
+  # Claude voit les pseudos des étudiants au lieu de s1, s2…
+  showNames: false
+
+# URL publique encodée dans le QR code. Vide : déduite de `ingress.host`
+# (https), sinon de la requête.
+publicURL: ""
+
+# Diaporamas reveal.js servis sous /deck/. Une seule source au plus.
+decks:
+  # Un ConfigMap dont chaque clé est un fichier (cours.html, logo.png…).
+  #   kubectl create configmap mes-cours --from-file=./mes-cours -n <ns>
+  configMap: ""
+  # Ou un PVC existant, pour des diaporamas plus lourds qu'un ConfigMap (1 Mio).
+  persistentVolumeClaim: ""
+
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: false
+  className: ""
+  host: ""
+  # Les WebSockets restent ouvertes toute la séance : derrière ingress-nginx,
+  # relever le délai de lecture, par ex.
+  #   nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+  #   nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+  # Traefik (k3s) n'en a pas besoin.
+  annotations: {}
+  tls:
+    enabled: true
+    # Secret TLS existant ; vide avec cert-manager, qui le crée d'après les annotations.
+    secretName: ""
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    memory: 256Mi
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+podAnnotations: {}

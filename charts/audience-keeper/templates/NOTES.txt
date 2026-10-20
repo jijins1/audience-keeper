@@ -1,0 +1,12 @@
+audience-keeper {{ .Chart.AppVersion }} déployé.
+
+{{- if .Values.ingress.enabled }}
+  Enseignant : {{ include "ak.publicURL" . }}/admin
+  Étudiants  : {{ include "ak.publicURL" . }}/
+  MCP        : {{ include "ak.publicURL" . }}/mcp  (Bearer AK_MCP_TOKEN)
+{{- else }}
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "ak.fullname" . }} 8080:{{ .Values.service.port }}
+  puis http://localhost:8080/admin
+{{- end }}
+
+La séance vit en mémoire : un redémarrage du pod l'efface. Exporter le CSV en fin de cours.

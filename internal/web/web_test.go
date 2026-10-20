@@ -57,11 +57,11 @@ func (h *harness) wsURL(path string) string {
 func (h *harness) join(pseudo string) joinResponse {
 	h.t.Helper()
 	body, _ := json.Marshal(joinRequest{Code: "abc123", Pseudo: pseudo})
-	res, err := http.Post(h.srv.URL+"/api/join", "application/json", bytes.NewReader(body))
+	res, err := httpPost(http.DefaultClient, h.srv.URL+"/api/join", "application/json", bytes.NewReader(body))
 	if err != nil {
 		h.t.Fatal(err)
 	}
-	defer res.Body.Close()
+	defer func() { _ = res.Body.Close() }()
 	if res.StatusCode != http.StatusOK {
 		h.t.Fatalf("join status %d", res.StatusCode)
 	}
@@ -77,11 +77,11 @@ func (h *harness) adminClient() *http.Client {
 	h.t.Helper()
 	jar, _ := cookiejar.New(nil)
 	c := &http.Client{Jar: jar}
-	res, err := c.PostForm(h.srv.URL+"/admin/login", url.Values{"token": {adminToken}})
+	res, err := httpPostForm(c, h.srv.URL+"/admin/login", url.Values{"token": {adminToken}})
 	if err != nil {
 		h.t.Fatal(err)
 	}
-	res.Body.Close()
+	_ = res.Body.Close()
 	return c
 }
 
@@ -98,12 +98,15 @@ func (h *harness) dial(path string, client *http.Client) *wsConn {
 	if client != nil {
 		opts.HTTPClient = client
 	}
-	conn, _, err := websocket.Dial(ctx, h.wsURL(path), opts)
+	conn, resp, err := websocket.Dial(ctx, h.wsURL(path), opts)
+	if resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
 	if err != nil {
 		h.t.Fatalf("dial %s: %v", path, err)
 	}
 	conn.SetReadLimit(1 << 20) // browsers have no limit; the Go client defaults to 32 KiB
-	h.t.Cleanup(func() { conn.CloseNow() })
+	h.t.Cleanup(func() { _ = conn.CloseNow() })
 	return &wsConn{t: h.t, conn: conn}
 }
 
@@ -141,12 +144,12 @@ func (w *wsConn) waitFor(typ string, ok func(json.RawMessage) bool) json.RawMess
 func TestStaticPagesAndHeaders(t *testing.T) {
 	h := newHarness(t, nil)
 	for path, want := range map[string]string{"/": "Rejoindre la séance", "/admin": "Espace enseignant", "/static/admin.js": "use strict", "/healthz": "ok"} {
-		res, err := http.Get(h.srv.URL + path)
+		res, err := httpGet(http.DefaultClient, h.srv.URL+path)
 		if err != nil {
 			t.Fatal(err)
 		}
 		body, _ := io.ReadAll(res.Body)
-		res.Body.Close()
+		_ = res.Body.Close()
 		if !strings.Contains(string(body), want) {
 			t.Errorf("%s: missing %q", path, want)
 		}
@@ -154,8 +157,8 @@ func TestStaticPagesAndHeaders(t *testing.T) {
 			t.Errorf("%s: security headers missing", path)
 		}
 	}
-	res, _ := http.Get(h.srv.URL + "/mcp")
-	res.Body.Close()
+	res, _ := httpGet(http.DefaultClient, h.srv.URL+"/mcp")
+	_ = res.Body.Close()
 	if res.StatusCode != http.StatusNotFound {
 		t.Fatalf("mcp should be disabled, got %d", res.StatusCode)
 	}
@@ -177,11 +180,11 @@ func TestJoinAPI(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			res, err := http.Post(h.srv.URL+"/api/join", "application/json", strings.NewReader(tt.body))
+			res, err := httpPost(http.DefaultClient, h.srv.URL+"/api/join", "application/json", strings.NewReader(tt.body))
 			if err != nil {
 				t.Fatal(err)
 			}
-			res.Body.Close()
+			_ = res.Body.Close()
 			if res.StatusCode != tt.want {
 				t.Fatalf("status %d, want %d", res.StatusCode, tt.want)
 			}
@@ -192,53 +195,53 @@ func TestJoinAPI(t *testing.T) {
 func TestAdminAuth(t *testing.T) {
 	h := newHarness(t, nil)
 	for _, p := range []string{"/admin/qr.png", "/admin/export.csv", "/admin/join-url", "/admin/ws"} {
-		res, err := http.Get(h.srv.URL + p)
+		res, err := httpGet(http.DefaultClient, h.srv.URL+p)
 		if err != nil {
 			t.Fatal(err)
 		}
-		res.Body.Close()
+		_ = res.Body.Close()
 		if res.StatusCode != http.StatusUnauthorized {
 			t.Errorf("%s without session: %d", p, res.StatusCode)
 		}
 	}
 	jar, _ := cookiejar.New(nil)
 	bad := &http.Client{Jar: jar}
-	res, _ := bad.PostForm(h.srv.URL+"/admin/login", url.Values{"token": {"wrong"}})
-	res.Body.Close()
+	res, _ := httpPostForm(bad, h.srv.URL+"/admin/login", url.Values{"token": {"wrong"}})
+	_ = res.Body.Close()
 	if res.Request.URL.Query().Get("error") != "1" {
 		t.Fatal("bad token should redirect with error")
 	}
 
 	c := h.adminClient()
-	res, _ = c.Get(h.srv.URL + "/admin")
+	res, _ = httpGet(c, h.srv.URL+"/admin")
 	body, _ := io.ReadAll(res.Body)
-	res.Body.Close()
+	_ = res.Body.Close()
 	if !strings.Contains(string(body), "Nouvelle question") {
 		t.Fatal("logged-in admin should see the dashboard")
 	}
-	res, _ = c.Get(h.srv.URL + "/admin/qr.png")
+	res, _ = httpGet(c, h.srv.URL+"/admin/qr.png")
 	png, _ := io.ReadAll(res.Body)
-	res.Body.Close()
+	_ = res.Body.Close()
 	if res.Header.Get("Content-Type") != "image/png" || !bytes.HasPrefix(png, []byte("\x89PNG")) {
 		t.Fatal("qr is not a png")
 	}
-	res, _ = c.Get(h.srv.URL + "/admin/join-url")
+	res, _ = httpGet(c, h.srv.URL+"/admin/join-url")
 	var ju map[string]string
 	_ = json.NewDecoder(res.Body).Decode(&ju)
-	res.Body.Close()
+	_ = res.Body.Close()
 	if !strings.HasSuffix(ju["url"], "/?code=ABC123") {
 		t.Fatalf("join url %q", ju["url"])
 	}
-	res, _ = c.Get(h.srv.URL + "/admin/export.csv")
+	res, _ = httpGet(c, h.srv.URL+"/admin/export.csv")
 	csv, _ := io.ReadAll(res.Body)
-	res.Body.Close()
+	_ = res.Body.Close()
 	if !strings.HasPrefix(string(csv), "question_id,") {
 		t.Fatalf("csv: %s", csv)
 	}
-	res, _ = c.PostForm(h.srv.URL+"/admin/logout", nil)
-	res.Body.Close()
-	res, _ = c.Get(h.srv.URL + "/admin/join-url")
-	res.Body.Close()
+	res, _ = httpPostForm(c, h.srv.URL+"/admin/logout", nil)
+	_ = res.Body.Close()
+	res, _ = httpGet(c, h.srv.URL+"/admin/join-url")
+	_ = res.Body.Close()
 	if res.StatusCode != http.StatusUnauthorized {
 		t.Fatal("logout should invalidate the session")
 	}
@@ -363,7 +366,7 @@ func TestRequireBearer(t *testing.T) {
 		{"Bearer secret-token-0123456789", http.StatusTeapot},
 	} {
 		rec := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/mcp", nil)
+		req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/mcp", nil)
 		if tt.header != "" {
 			req.Header.Set("Authorization", tt.header)
 		}
@@ -377,9 +380,9 @@ func TestRequireBearer(t *testing.T) {
 func TestLoginRateLimit(t *testing.T) {
 	a := newAdminAuth(adminToken)
 	for i := 0; i < 5; i++ {
-		a.login(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/", nil), "wrong")
+		a.login(httptest.NewRecorder(), httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/", nil), "wrong")
 	}
-	if a.login(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/", nil), adminToken) {
+	if a.login(httptest.NewRecorder(), httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/", nil), adminToken) {
 		t.Fatal("brute force should be throttled, even with the right token")
 	}
 }
@@ -387,7 +390,7 @@ func TestLoginRateLimit(t *testing.T) {
 func TestLoginLimiterIsPerIPAndFailuresOnly(t *testing.T) {
 	a := newAdminAuth(adminToken)
 	req := func(ip string) *http.Request {
-		r := httptest.NewRequest(http.MethodPost, "/", nil)
+		r := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/", nil)
 		r.RemoteAddr = ip + ":1234"
 		return r
 	}
@@ -407,7 +410,7 @@ func TestLoginLimiterIsPerIPAndFailuresOnly(t *testing.T) {
 func TestBearerSchemeCaseInsensitive(t *testing.T) {
 	h := RequireBearer("secret-token-0123456789", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusTeapot) }))
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/mcp", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/mcp", nil)
 	req.Header.Set("Authorization", "bearer secret-token-0123456789")
 	h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusTeapot {
@@ -420,8 +423,8 @@ func TestTeacherSocketClosedOnLogout(t *testing.T) {
 	c := h.adminClient()
 	teacher := h.dial("/admin/ws", c)
 	teacher.waitFor("teacher", nil)
-	res, _ := c.PostForm(h.srv.URL+"/admin/logout", nil)
-	res.Body.Close()
+	res, _ := httpPostForm(c, h.srv.URL+"/admin/logout", nil)
+	_ = res.Body.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), sessionRecheck+3*time.Second)
 	defer cancel()
 	for {
@@ -466,19 +469,19 @@ func TestDecks(t *testing.T) {
 	h := newHarnessWithDecks(t, nil, dir)
 
 	noRedirect := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-	res, _ := noRedirect.Get(h.srv.URL + "/deck/demo.html")
-	res.Body.Close()
+	res, _ := httpGet(noRedirect, h.srv.URL+"/deck/demo.html")
+	_ = res.Body.Close()
 	if res.StatusCode != http.StatusSeeOther || res.Header.Get("Location") != "/admin?next=%2Fdeck%2Fdemo.html" {
 		t.Fatalf("anonymous deck access: %d %s", res.StatusCode, res.Header.Get("Location"))
 	}
 
 	c := h.adminClient()
 	get := func(p string) (int, string, http.Header) {
-		res, err := c.Get(h.srv.URL + p)
+		res, err := httpGet(c, h.srv.URL+p)
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer res.Body.Close()
+		defer func() { _ = res.Body.Close() }()
 		b, _ := io.ReadAll(res.Body)
 		return res.StatusCode, string(b), res.Header
 	}
@@ -521,11 +524,11 @@ func TestLoginRedirectsToNext(t *testing.T) {
 	h := newHarness(t, nil)
 	jar, _ := cookiejar.New(nil)
 	c := &http.Client{Jar: jar}
-	res, err := c.PostForm(h.srv.URL+"/admin/login", url.Values{"token": {adminToken}, "next": {"/deck/demo.html"}})
+	res, err := httpPostForm(c, h.srv.URL+"/admin/login", url.Values{"token": {adminToken}, "next": {"/deck/demo.html"}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	res.Body.Close()
+	_ = res.Body.Close()
 	if res.Request.URL.Path != "/deck/demo.html" || res.StatusCode != 200 {
 		t.Fatalf("landed on %s (%d)", res.Request.URL, res.StatusCode)
 	}
@@ -551,17 +554,17 @@ func TestDeckAssetsPublicPagesPrivate(t *testing.T) {
 	h := newHarnessWithDecks(t, nil, dir)
 	noRedirect := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	for p, want := range map[string]int{"/deck/img.svg": 200, "/deck/cours.html": 303, "/deck/COURS.HTML": 303, "/deck/": 303, "/deck/sub": 303} {
-		res, err := noRedirect.Get(h.srv.URL + p)
+		res, err := httpGet(noRedirect, h.srv.URL+p)
 		if err != nil {
 			t.Fatal(err)
 		}
-		res.Body.Close()
+		_ = res.Body.Close()
 		if res.StatusCode != want {
 			t.Errorf("%s: %d, want %d", p, res.StatusCode, want)
 		}
 	}
-	res, _ := http.Get(h.srv.URL + "/")
-	res.Body.Close()
+	res, _ := httpGet(http.DefaultClient, h.srv.URL+"/")
+	_ = res.Body.Close()
 	if res.Header.Get("Content-Security-Policy") != studentCSP || strings.Contains(studentCSP, "script-src 'self' 'unsafe-inline'") {
 		t.Fatal("student page must allow slide styles but never inline scripts")
 	}
@@ -598,7 +601,7 @@ func TestSlideClearedWhenDeckDisconnects(t *testing.T) {
 	deck.waitFor("teacher", nil)
 	deck.send(map[string]any{"t": "slide", "html": "<section>a</section>"})
 	deck.waitFor("teacher", func(d json.RawMessage) bool { return strings.Contains(string(d), `"live":{`) })
-	deck.conn.Close(websocket.StatusNormalClosure, "")
+	_ = deck.conn.Close(websocket.StatusNormalClosure, "")
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
 		if _, ok := h.room.Slide(); !ok {
@@ -607,4 +610,27 @@ func TestSlideClearedWhenDeckDisconnects(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	t.Fatal("slide still mirrored after the deck left")
+}
+
+// HTTP helpers: every request carries a context (noctx).
+
+func httpGet(c *http.Client, u string) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, u, nil)
+	if err != nil {
+		return nil, err
+	}
+	return c.Do(req)
+}
+
+func httpPost(c *http.Client, u, contentType string, body io.Reader) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, u, body)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", contentType)
+	return c.Do(req)
+}
+
+func httpPostForm(c *http.Client, u string, v url.Values) (*http.Response, error) {
+	return httpPost(c, u, "application/x-www-form-urlencoded", strings.NewReader(v.Encode()))
 }

@@ -1,0 +1,299 @@
+# Intégration continue et publication — même mode que warden : on vérifie tout
+# (code, image servie, chart rendu), puis on publie depuis `main` seulement,
+# sous une version unique et immuable 0.0.<run_number>.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          # La version vient de go.mod : une seule source de vérité.
+          go-version-file: go.mod
+
+      - name: Formatage
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "Fichiers non formatés :"; echo "$unformatted"; exit 1
+          fi
+
+      - name: go.mod à jour
+        run: |
+          go mod tidy
+          if ! git diff --quiet; then
+            echo "go mod tidy produit un diff — committer le résultat :"
+            git diff --stat
+            exit 1
+          fi
+
+      - name: Build
+        run: go build ./...
+
+      - name: Vet
+        run: go vet ./...
+
+      # Le binaire se lance aussi depuis le laptop de l'enseignant : une
+      # régression de portabilité doit se voir avant la release.
+      - name: Compilation croisée
+        run: |
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64; do
+            echo "→ $target"
+            CGO_ENABLED=0 GOOS="${target%/*}" GOARCH="${target#*/}" go build -o /dev/null ./cmd/audience-keeper
+          done
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      # Version figée : `latest` ferait apparaître des erreurs sur des branches
+      # qui n'ont pas bougé, à chaque publication d'un linter.
+      - uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.12.2
+
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      # Domaine, HTTP, WebSocket et MCP de bout en bout, sans Docker.
+      - name: go test
+        run: go test -race ./...
+
+  image:
+    name: Image — démarrage et en-têtes servis
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    # Ce job n'exerce pas le code mais l'ARTEFACT : le Dockerfile, et ce que
+    # le serveur répond réellement, dans les contraintes du pod.
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Construction de l'image
+        run: make image REGISTRY_OWNER=${{ github.repository_owner }} IMAGE_TAG=ci
+
+      # Mêmes contraintes que le Deployment : racine en lecture seule, uid
+      # non-root. Un binaire qui se mettrait à écrire sur disque échouerait ici
+      # et non en production.
+      - name: Démarrage
+        run: |
+          docker run -d --name ak --read-only --user 65532:65532 -p 18080:8080 \
+            -e AK_ADMIN_TOKEN=ci-admin-token-0123456789 \
+            -e AK_MCP_TOKEN=ci-mcp-token-0123456789 \
+            ghcr.io/${{ github.repository_owner }}/audience-keeper:ci
+          for _ in $(seq 1 30); do
+            curl -sf -o /dev/null http://localhost:18080/healthz && exit 0
+            sleep 1
+          done
+          echo "::error::le serveur n'a pas répondu en 30 s"
+          docker logs ak
+          exit 1
+
+      - name: Les en-têtes de sécurité sont sur tous les chemins
+        run: |
+          echec=0
+          for chemin in / /admin /static/student.js /deck/ /healthz; do
+            entetes=$(curl -sI "http://localhost:18080$chemin")
+            for attendu in X-Content-Type-Options X-Frame-Options Referrer-Policy Content-Security-Policy; do
+              if ! printf '%s' "$entetes" | grep -qi "^$attendu:"; then
+                echo "::error::$attendu absent de $chemin"
+                echec=1
+              fi
+            done
+          done
+          exit $echec
+
+      # `script-src` sans exception sur les pages élève et enseignant : c'est là
+      # que l'XSS atterrirait, et les élèves y envoient du texte libre.
+      - name: script-src ne tolère aucun inline
+        run: |
+          echec=0
+          for chemin in / /admin; do
+            csp=$(curl -sI "http://localhost:18080$chemin" | grep -i '^Content-Security-Policy:')
+            if printf '%s' "$csp" | grep -qE "script-src[^;]*unsafe-(inline|eval)"; then
+              echo "::error::$chemin : script-src tolère unsafe-inline/eval"
+              echo "$csp"
+              echec=1
+            fi
+          done
+          exit $echec
+
+      # Les diaporamas contiennent toutes les slides à venir : jamais servis sans
+      # connexion enseignant. Le MCP exige son jeton.
+      - name: Ce qui est privé le reste
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:18080/deck/demo.html)
+          [ "$code" = "303" ] || { echo "::error::/deck/demo.html anonyme = HTTP $code, attendu 303"; exit 1; }
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X POST http://localhost:18080/mcp)
+          [ "$code" = "401" ] || { echo "::error::/mcp sans jeton = HTTP $code, attendu 401"; exit 1; }
+
+      # Une salle de classe n'a pas toujours internet : tout doit être embarqué.
+      - name: Aucune dépendance réseau tierce
+        run: |
+          for chemin in / /admin /static/student.js /static/admin.js /static/style.css; do
+            if curl -s "http://localhost:18080$chemin" | grep -qE 'https?://(cdn\.|unpkg\.|fonts\.(googleapis|gstatic))'; then
+              echo "::error::$chemin référence un CDN"
+              exit 1
+            fi
+          done
+
+      - name: Arrêt
+        if: always()
+        run: docker rm -f ak || true
+
+  chart:
+    name: Chart — ressources rendues
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    # `helm lint` et `helm template` réussissent sur un manifeste où une
+    # ressource a disparu ou où le réplica unique a glissé : on lit le rendu.
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/setup-helm@v4
+
+      - name: helm lint
+        run: helm lint charts/audience-keeper --set auth.existingSecret=lint
+
+      - name: Les ressources rendues sont celles attendues
+        run: python3 build/verif/chart.py
+
+  publish:
+    name: Publication de l'image et du chart
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    # Sur `main` SEULEMENT, et après TOUT le reste : une image publiée est tirée
+    # par le déploiement dès qu'elle existe.
+    if: github.ref == 'refs/heads/main'
+    needs: [build, lint, test, image, chart]
+
+    # `packages: write` uniquement ici.
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Le runner est amd64 : sans QEMU, buildx ne peut pas émettre arm64.
+      - uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      # Le pilote `docker` par défaut ne sait pas produire de manifeste
+      # multi-plateforme ; `docker-container` sait.
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: azure/setup-helm@v4
+
+      # UNE version par build, IMMUABLE. Un tag mouvant n'est jamais retiré par
+      # un nœud qui l'a en cache (`IfNotPresent`) : republier ne déploierait rien.
+      # `run_number` ne revient jamais en arrière, même après un re-run.
+      - name: Version du build
+        run: echo "VERSION=0.0.${{ github.run_number }}" >> "$GITHUB_ENV"
+
+      # Les cibles make, pas des `docker build` recopiés : ce qui est publié est
+      # ce que `make` construit en local. Un fork publie chez lui.
+      - name: Construction et publication de l'image
+        run: |
+          make image-push \
+            REGISTRY=ghcr.io \
+            REGISTRY_OWNER=${{ github.repository_owner }} \
+            IMAGE_TAG="$VERSION"
+
+      # Même version que l'image : son appVersion est le tag par défaut, donc le
+      # chart 0.0.N déploie forcément l'image 0.0.N.
+      - name: Publication du chart
+        run: |
+          helm registry login ghcr.io \
+            -u ${{ github.actor }} -p ${{ secrets.GITHUB_TOKEN }}
+          make chart-push \
+            REGISTRY=ghcr.io \
+            REGISTRY_OWNER=${{ github.repository_owner }} \
+            CHART_VERSION="$VERSION"
+
+      - name: Version publiée
+        run: |
+          {
+            echo "### Publié en \`$VERSION\`"
+            echo
+            echo "- image : \`ghcr.io/${{ github.repository_owner }}/audience-keeper:$VERSION\`"
+            echo "- chart : \`oci://ghcr.io/${{ github.repository_owner }}/charts/audience-keeper --version $VERSION\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  release:
+    name: Publication des binaires
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    # Même porte que `publish`. Le binaire sert à qui fait cours depuis son
+    # laptop, sans Docker ni cluster.
+    if: github.ref == 'refs/heads/main'
+    needs: [build, lint, test, image, chart]
+
+    # `contents: write` uniquement ici, pour créer la release.
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      # Même calcul que `publish` : les deux jobs tombent sur la même version.
+      - name: Version du build
+        run: echo "VERSION=0.0.${{ github.run_number }}" >> "$GITHUB_ENV"
+
+      - name: Compilation croisée
+        run: make dist IMAGE_TAG="$VERSION"
+
+      # Un tag par build, immuable comme la version de l'image.
+      - name: Publication de la release GitHub
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "v$VERSION" dist/audience-keeper_* \
+            --title "v$VERSION" \
+            --notes "Build continu depuis main, commit ${{ github.sha }}. Image : ghcr.io/${{ github.repository_owner }}/audience-keeper:$VERSION"

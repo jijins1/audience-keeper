@@ -41,7 +41,7 @@ func setup(t *testing.T, opts Options) *fixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { cs.Close() })
+	t.Cleanup(func() { _ = cs.Close() })
 	return &fixture{room: room, session: cs, lea: lea.ID, tom: tom.ID, qid: q.ID}
 }
 

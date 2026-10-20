@@ -157,7 +157,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/admin?error=1", http.StatusSeeOther)
 		return
 	}
-	http.Redirect(w, r, safeNext(r.PostForm.Get("next")), http.StatusSeeOther)
+	http.Redirect(w, r, safeNext(r.PostForm.Get("next")), http.StatusSeeOther) //nolint:gosec // G710: safeNext n'accepte que des chemins locaux (testé)
 }
 
 // safeNext only allows local paths, so the login form cannot be used as an open redirect.

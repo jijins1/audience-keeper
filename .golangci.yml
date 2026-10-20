@@ -1,0 +1,16 @@
+# Mêmes linters que warden, moins ceux qui visent SQL (pas de base ici).
+# La version de golangci-lint est figée dans la CI : `latest` ferait apparaître
+# des erreurs sur des branches qui n'ont pas bougé.
+version: "2"
+
+linters:
+  enable:
+    - gosec
+    - errorlint
+    - bodyclose
+    - noctx
+
+issues:
+  # Tout afficher : un plafond par linter masquerait les occurrences suivantes.
+  max-issues-per-linter: 0
+  max-same-issues: 0

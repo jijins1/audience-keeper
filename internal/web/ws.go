@@ -72,7 +72,7 @@ func pump(ctx context.Context, conn *websocket.Conn, c *client) {
 			return
 		case b := <-c.send:
 			if b == nil {
-				conn.Close(websocket.StatusNormalClosure, "séance terminée")
+				_ = conn.Close(websocket.StatusNormalClosure, "séance terminée")
 				c.cancel()
 				return
 			}
@@ -123,24 +123,24 @@ func (s *Server) handleStudentWS(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
-	defer conn.CloseNow()
+	defer func() { _ = conn.CloseNow() }()
 
 	hctx, hcancel := context.WithTimeout(r.Context(), helloTimeout)
 	hello, err := readJSON(hctx, conn)
 	hcancel()
 	if err != nil || hello.T != "hello" {
-		conn.Close(websocket.StatusPolicyViolation, "hello attendu")
+		_ = conn.Close(websocket.StatusPolicyViolation, "hello attendu")
 		return
 	}
 	sid, ok := s.room.Authenticate(hello.Token)
 	if !ok {
 		_ = conn.Write(r.Context(), websocket.MessageText, mustJSON(envelope{T: "ended"}))
-		conn.Close(websocket.StatusPolicyViolation, "session inconnue")
+		_ = conn.Close(websocket.StatusPolicyViolation, "session inconnue")
 		return
 	}
 
 	if s.hub.studentConns(sid) >= maxStudentTabs {
-		conn.Close(websocket.StatusPolicyViolation, "trop d'onglets ouverts")
+		_ = conn.Close(websocket.StatusPolicyViolation, "trop d'onglets ouverts")
 		return
 	}
 	ctx, cancel := context.WithCancel(r.Context())
@@ -176,7 +176,7 @@ func (s *Server) handleStudentWS(w http.ResponseWriter, r *http.Request) {
 			c.trySend(errMsg(err))
 		}
 		if bad >= maxBadMessages {
-			conn.Close(websocket.StatusPolicyViolation, "trop de messages invalides")
+			_ = conn.Close(websocket.StatusPolicyViolation, "trop de messages invalides")
 			return
 		}
 	}
@@ -208,7 +208,7 @@ func (s *Server) handleTeacherWS(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
-	defer conn.CloseNow()
+	defer func() { _ = conn.CloseNow() }()
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 	conn.SetReadLimit(teacherReadLim)
