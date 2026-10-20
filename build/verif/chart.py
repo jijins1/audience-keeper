@@ -85,7 +85,18 @@ ing = kinds["Ingress"][0]
 backend = ing["spec"]["rules"][0]["http"]["paths"][0]["backend"]["service"]["name"]
 check(backend == kinds["Service"][0]["metadata"]["name"], "l'Ingress vise un Service qui n'existe pas")
 
-# 9. Sans ingress ni diaporamas : rien de superflu.
+# 9. Diaporamas depuis une image : volume image monté au bon sous-dossier.
+img = by_kind(render("auth.existingSecret=tok", "decks.image.reference=ghcr.io/x/cours@sha256:abc"))["Deployment"][0]["spec"]["template"]["spec"]
+vol = img["volumes"][0]
+check(vol.get("image", {}).get("reference") == "ghcr.io/x/cours@sha256:abc", "decks.image ne rend pas de volume image")
+mount = img["containers"][0]["volumeMounts"][0]
+check(mount.get("subPath") == "usr/share/nginx/html" and mount.get("readOnly"), "volume image mal monté (subPath/readOnly)")
+check(render("auth.existingSecret=tok", "decks.image.reference=a", "decks.configMap=b", expect_fail=True).returncode != 0,
+      "deux sources de diaporamas acceptées")
+check(render("auth.existingSecret=tok", "decks.image.reference=a", "decks.image.path=/usr", expect_fail=True).returncode != 0,
+      "decks.image.path absolu accepté")
+
+# 10. Sans ingress ni diaporamas : rien de superflu.
 minimal = by_kind(render("auth.existingSecret=tok"))
 check("Ingress" not in minimal, "Ingress rendu alors que ingress.enabled=false")
 check(not minimal["Deployment"][0]["spec"]["template"]["spec"].get("volumes"), "volume rendu sans diaporamas")

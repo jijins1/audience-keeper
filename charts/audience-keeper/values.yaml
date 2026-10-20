@@ -50,6 +50,19 @@ publicURL: ""
 
 # Diaporamas reveal.js servis sous /deck/. Une seule source au plus.
 decks:
+  # Une IMAGE OCI qui contient déjà les diaporamas (typiquement l'image nginx
+  # d'un dépôt de cours), montée en lecture seule comme volume (Kubernetes ≥ 1.33,
+  # « image volume ») : ni copie, ni ConfigMap à tenir à jour.
+  image:
+    # Épingler par DIGEST : un tag mouvant (`master`) monté avec IfNotPresent ne
+    # serait jamais retiré par un nœud qui l'a déjà, et les slides ne changeraient
+    # pas sans que rien ne le dise.
+    #   reference: ghcr.io/jijins1/cours-middleware@sha256:…
+    reference: ""
+    # Le dossier des HTML dans l'image, SANS slash initial.
+    path: usr/share/nginx/html
+    pullPolicy: IfNotPresent
+
   # Un ConfigMap dont chaque clé est un fichier (cours.html, logo.png…).
   #   kubectl create configmap mes-cours --from-file=./mes-cours -n <ns>
   configMap: ""

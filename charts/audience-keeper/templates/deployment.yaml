@@ -1,10 +1,15 @@
 {{- if not .Values.auth.existingSecret }}
 {{- fail "auth.existingSecret est obligatoire : créer d'abord un Secret portant AK_ADMIN_TOKEN (voir values.yaml)" }}
 {{- end }}
-{{- if and .Values.decks.configMap .Values.decks.persistentVolumeClaim }}
-{{- fail "decks.configMap et decks.persistentVolumeClaim sont exclusifs" }}
+{{- $sources := 0 }}
+{{- range (list .Values.decks.configMap .Values.decks.persistentVolumeClaim .Values.decks.image.reference) }}{{ if . }}{{ $sources = add1 $sources }}{{ end }}{{ end }}
+{{- if gt $sources 1 }}
+{{- fail "decks.configMap, decks.persistentVolumeClaim et decks.image.reference sont exclusifs" }}
 {{- end }}
-{{- $decks := or .Values.decks.configMap .Values.decks.persistentVolumeClaim }}
+{{- if hasPrefix "/" .Values.decks.image.path }}
+{{- fail "decks.image.path est relatif à la racine de l'image : sans slash initial (ex. usr/share/nginx/html)" }}
+{{- end }}
+{{- $decks := or .Values.decks.configMap .Values.decks.persistentVolumeClaim .Values.decks.image.reference }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -94,6 +99,9 @@ spec:
             - name: decks
               mountPath: /decks
               readOnly: true
+              {{- if and .Values.decks.image.reference .Values.decks.image.path }}
+              subPath: {{ .Values.decks.image.path }}
+              {{- end }}
           {{- end }}
       {{- if $decks }}
       volumes:
@@ -101,6 +109,10 @@ spec:
           {{- if .Values.decks.configMap }}
           configMap:
             name: {{ .Values.decks.configMap }}
+          {{- else if .Values.decks.image.reference }}
+          image:
+            reference: {{ .Values.decks.image.reference }}
+            pullPolicy: {{ .Values.decks.image.pullPolicy }}
           {{- else }}
           persistentVolumeClaim:
             claimName: {{ .Values.decks.persistentVolumeClaim }}

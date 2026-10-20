@@ -85,6 +85,14 @@ embarqué, donc ça marche sans internet.
 export AK_DECKS_DIR=./mes-cours      # tes fichiers .html (optionnel)
 ```
 
+En Kubernetes, le chart prend les diaporamas, au choix, depuis :
+- un ConfigMap (`decks.configMap`) ;
+- un PVC (`decks.persistentVolumeClaim`) ;
+- une **image OCI qui les contient déjà** (`decks.image.reference`, par exemple l'image nginx
+  d'un dépôt de cours). Elle est montée en lecture seule comme « image volume » (Kubernetes ≥ 1.33),
+  sans copie. Épingle-la par digest (`ghcr.io/<toi>/cours@sha256:…`) et vérifie qu'elle existe
+  pour l'architecture des nœuds.
+
 Ouvre `/deck/` (lien **Diaporamas** du tableau de bord). La démo `/deck/demo.html` est toujours
 disponible. Les diaporamas exigent la connexion enseignant.
 
@@ -114,6 +122,11 @@ disponible. Les diaporamas exigent la connexion enseignant.
 | `data-ak-live-results` | afficher les barres pendant la question (par défaut : après validation) |
 | `data-ak-join` | affiche le QR code et le code de la séance |
 
+- **Chemins des ressources** : référence-les en relatif (`node_modules/...`, `dist/...`), pas en
+  `/node_modules/...`. Servies sous `/deck/`, les URL absolues sortent du dossier des diaporamas.
+- **Plugins qui remplacent la synchro** : Seminar, QnA et Poll font double emploi avec la diffusion
+  et les questions d'audience-keeper. Retire-les ; Seminar est de toute façon bloqué par la CSP,
+  qui n'autorise que des connexions vers le serveur lui-même.
 - Touche **V** : valide la question en cours.
 - Revenir sur une slide déjà validée réaffiche ses résultats, sans rouvrir la question.
 - Passer vite sur une slide (moins de 0,6 s) n'ouvre pas sa question.
