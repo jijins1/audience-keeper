@@ -14,7 +14,8 @@ Côté enseignant, on voit :
   (avec validation de l'enseignant par défaut).
 
 > Les signaux de triche sont des **indices, pas des preuves** : un élève qui recopie depuis son
-> téléphone reste invisible. La page étudiant annonce clairement ce qui est observé.
+> téléphone reste invisible. La page étudiant n'affiche pas ce qui est observé : c'est à
+> l'enseignant d'en informer sa classe, selon les règles de son établissement.
 
 ## Démarrer
 
