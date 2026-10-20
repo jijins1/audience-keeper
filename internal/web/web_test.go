@@ -634,3 +634,95 @@ func httpPost(c *http.Client, u, contentType string, body io.Reader) (*http.Resp
 func httpPostForm(c *http.Client, u string, v url.Values) (*http.Response, error) {
 	return httpPost(c, u, "application/x-www-form-urlencoded", strings.NewReader(v.Encode()))
 }
+
+func TestPresenterRemoteControl(t *testing.T) {
+	h := newHarness(t, nil)
+	deck := h.dial("/admin/ws", h.adminClient())
+	deck.waitFor("teacher", nil)
+	jr := h.join("Léa")
+	st := h.dial("/ws", nil)
+	st.send(map[string]string{"t": "hello", "token": jr.Token})
+	st.waitFor("state", nil)
+
+	// without an open deck, the remote gets a clear error
+	phone := h.dial("/admin/ws", h.adminClient())
+	phone.waitFor("teacher", nil)
+	phone.send(map[string]any{"t": "presenter"})
+	phone.waitFor("presenter", func(d json.RawMessage) bool { return strings.Contains(string(d), `"live":false`) })
+	phone.send(map[string]any{"t": "nav", "action": "next"})
+	phone.waitFor("error", func(d json.RawMessage) bool { return strings.Contains(string(d), "aucun diaporama") })
+
+	// the deck publishes a slide with teacher-only details
+	deck.send(map[string]any{"t": "slide", "deck": "Cours", "html": "<section>courante</section>", "fragment": -1,
+		"notes": "NOTE-SECRETE", "nextHtml": "<section>SUIVANTE</section>", "number": 2, "total": 5, "questionKey": "k"})
+	phone.waitFor("presenter", func(d json.RawMessage) bool {
+		return strings.Contains(string(d), "NOTE-SECRETE") && strings.Contains(string(d), "SUIVANTE")
+	})
+	raw := st.waitFor("state", func(d json.RawMessage) bool { return strings.Contains(string(d), "courante") })
+	if strings.Contains(string(raw), "NOTE-SECRETE") || strings.Contains(string(raw), "SUIVANTE") {
+		t.Fatalf("notes or next slide sent to a student: %s", raw)
+	}
+
+	// the phone drives the deck through the server
+	phone.send(map[string]any{"t": "nav", "action": "next"})
+	deck.waitFor("nav", func(d json.RawMessage) bool { return strings.Contains(string(d), `"next"`) })
+	phone.send(map[string]any{"t": "nav", "action": "rm -rf"})
+	phone.waitFor("error", nil)
+
+	// the deck closes: presenter pages are told
+	deck.send(map[string]any{"t": "slide-off"})
+	phone.waitFor("presenter", func(d json.RawMessage) bool { return strings.Contains(string(d), `"live":false`) })
+}
+
+func TestPhonePairing(t *testing.T) {
+	h := newHarness(t, nil)
+	c := h.adminClient()
+	res, err := httpGet(c, h.srv.URL+"/admin/pair.png")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = res.Body.Close()
+	if res.StatusCode != 200 || res.Header.Get("Content-Type") != "image/png" {
+		t.Fatalf("pair qr: %d", res.StatusCode)
+	}
+	if code := statusOf(t, http.DefaultClient, h.srv.URL+"/admin/pair.png"); code != http.StatusUnauthorized {
+		t.Fatal("pairing QR must require a teacher session")
+	}
+
+	tok := h.s.auth.newPairing()
+	jar, _ := cookiejar.New(nil)
+	phone := &http.Client{Jar: jar}
+	res, _ = httpGet(phone, h.srv.URL+"/admin/pair?t="+tok)
+	body, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != 200 || !strings.Contains(string(body), "/admin/presenter") {
+		t.Fatalf("pairing: %d %s", res.StatusCode, body)
+	}
+	res, _ = httpGet(phone, h.srv.URL+"/admin/presenter")
+	body, _ = io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if !strings.Contains(string(body), "Présentateur") || res.Header.Get("Content-Security-Policy") != studentCSP {
+		t.Fatalf("paired phone should reach the presenter view: %d", res.StatusCode)
+	}
+
+	// single use, and expired tokens are refused
+	other := &http.Client{}
+	if statusOf(t, other, h.srv.URL+"/admin/pair?t="+tok) != http.StatusForbidden {
+		t.Fatal("a pairing token must work only once")
+	}
+	old := h.s.auth.newPairing()
+	h.s.auth.now = func() time.Time { return time.Now().Add(pairingTTL + time.Second) }
+	if statusOf(t, other, h.srv.URL+"/admin/pair?t="+old) != http.StatusForbidden {
+		t.Fatal("an expired pairing token must be refused")
+	}
+}
+
+func statusOf(t *testing.T, c *http.Client, u string) int {
+	t.Helper()
+	res, err := httpGet(c, u)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = res.Body.Close()
+	return res.StatusCode
+}

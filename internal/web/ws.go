@@ -15,7 +15,7 @@ import (
 
 const (
 	wsReadLimit    = 64 << 10
-	teacherReadLim = 320 << 10 // a mirrored slide can weigh up to 256 KiB
+	teacherReadLim = 640 << 10 // a mirrored slide and the next one, up to 256 KiB each, plus notes
 	wsWriteTimeout = 10 * time.Second
 	wsPingEvery    = 25 * time.Second
 	helloTimeout   = 10 * time.Second
@@ -56,6 +56,15 @@ type inbound struct {
 	V        int      `json:"v,omitempty"`
 	Fragment int      `json:"fragment,omitempty"`
 	Themes   []string `json:"themes,omitempty"`
+
+	// presenter details (teacher only) and remote control
+	Notes       string `json:"notes,omitempty"`
+	NextHTML    string `json:"nextHtml,omitempty"`
+	Number      int    `json:"number,omitempty"`
+	Total       int    `json:"total,omitempty"`
+	Fragments   int    `json:"fragments,omitempty"`
+	QuestionKey string `json:"questionKey,omitempty"`
+	Action      string `json:"action,omitempty"`
 }
 
 func errMsg(err error) []byte {
@@ -227,16 +236,31 @@ func (s *Server) handleTeacherWS(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			return
 		}
-		if m.T == "slide" {
+		switch m.T {
+		case "slide":
 			c.mirroring.Store(true)
-		}
-		if m.T == "view" {
+		case "view":
 			c.setView(m.Q)
 			s.hub.pushTeacher(c)
+			continue
+		case "presenter":
+			// a presenter page (laptop or phone) subscribes to teacher-only slide details
+			c.presenting.Store(true)
+			s.hub.pushPresenter(c)
+			continue
+		case "nav":
+			if err := s.hub.relayNav(m.Action); err != nil {
+				c.trySend(errMsg(err))
+			}
 			continue
 		}
 		if err := s.teacherMessage(m); err != nil {
 			c.trySend(errMsg(err))
+			continue
+		}
+		switch m.T {
+		case "slide", "slide-off", "reset":
+			s.hub.broadcastPresenter()
 		}
 	}
 }
@@ -284,7 +308,9 @@ func (s *Server) teacherMessage(m inbound) error {
 	case "aimode":
 		return r.SetAIMode(classroom.AIMode(m.Mode))
 	case "slide":
-		return r.SetSlide(classroom.LiveSlide{Deck: m.Deck, HTML: m.HTML, H: m.H, V: m.V, Fragment: m.Fragment, Themes: m.Themes})
+		return r.SetSlide(
+			classroom.LiveSlide{Deck: m.Deck, HTML: m.HTML, H: m.H, V: m.V, Fragment: m.Fragment, Themes: m.Themes},
+			classroom.PresenterInfo{Notes: m.Notes, NextHTML: m.NextHTML, Number: m.Number, Total: m.Total, Fragments: m.Fragments, QuestionKey: m.QuestionKey})
 	case "slide-off":
 		r.ClearSlide()
 		return nil

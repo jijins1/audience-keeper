@@ -10,7 +10,9 @@
  *
  *   <section data-ak-join> ... </section>   shows the QR code and join code.
  *
- *   Key V validates the current question.
+ *   Key V validates the current question; key P opens the presenter view
+ *   (notes, next slide, question controls), which also works on a phone as a
+ *   remote control.
  *
  * The current slide (and only it) is mirrored live on student screens, without
  * speaker notes, scripts or this plugin's panels. Students cannot navigate.
@@ -66,6 +68,7 @@
       let m;
       try { m = JSON.parse(ev.data); } catch { return; }
       if (m.t === "teacher") { tv = m.d; refresh(); }
+      else if (m.t === "nav") navigate(m.d.action);
     };
     ws.onclose = () => {
       setBadge(false);
@@ -169,20 +172,55 @@
       .filter(Boolean);
   }
 
+  const MAX_NOTES = 60 * 1024;
+  const bytes = (s) => new TextEncoder().encode(s).length;
+
+  function shareable(slide) {
+    if (!slide) return "";
+    if (slide.hasAttribute("data-ak-private")) return '<section><h2>⏸</h2></section>';
+    const html = snapshot(slide);
+    return bytes(html) > MAX_HTML ? "<section><p>(slide trop lourde pour être diffusée)</p></section>" : html;
+  }
+
+  // Speaker notes: reveal accepts <aside class="notes"> or data-notes. They go
+  // to the presenter page only — never to students.
+  function notesOf(slide) {
+    const aside = slide.querySelector(":scope > aside.notes");
+    const notes = aside ? aside.innerHTML.trim() : (slide.getAttribute("data-notes") || "");
+    return bytes(notes) > MAX_NOTES ? "(notes trop longues)" : notes;
+  }
+
   function mirrorSlide() {
     if (!mirror || !deck) return;
     const slide = deck.getCurrentSlide();
     if (!slide) return;
     const i = deck.getIndices();
-    let html = slide.hasAttribute("data-ak-private")
-      ? '<section><h2>⏸</h2></section>'
-      : snapshot(slide);
-    if (new TextEncoder().encode(html).length > MAX_HTML) html = "<section><p>(slide trop lourde pour être diffusée)</p></section>";
-    const msg = { t: "slide", deck: document.title.slice(0, 200), html, h: i.h, v: i.v || 0, fragment: i.f == null ? -1 : i.f, themes: themes().slice(0, 8) };
+    const all = deck.getSlides();
+    const pos = all.indexOf(slide);
+    const msg = {
+      t: "slide", deck: document.title.slice(0, 200), html: shareable(slide),
+      h: i.h, v: i.v || 0, fragment: i.f == null ? -1 : i.f, themes: themes().slice(0, 8),
+      // teacher-only: the server keeps these out of every student view
+      notes: notesOf(slide), nextHtml: shareable(all[pos + 1]),
+      number: pos + 1, total: all.length, fragments: slide.querySelectorAll(".fragment").length,
+      questionKey: isQuestion(slide) ? keyOf(slide) : "",
+    };
     const key = JSON.stringify(msg);
     if (key === lastMirror) return;
     lastMirror = key;
     send(msg);
+  }
+
+  // Remote control from the presenter page (laptop or phone).
+  function navigate(action) {
+    if (!deck) return;
+    switch (action) {
+      case "next": deck.next(); break;
+      case "prev": deck.prev(); break;
+      case "first": deck.slide(0, 0); break;
+      case "last": deck.slide(deck.getHorizontalSlides().length - 1, 0); break;
+      case "pause": deck.togglePause(); break;
+    }
   }
 
   function validateCurrent() {
@@ -296,6 +334,9 @@
     deck.on("fragmenthidden", mirrorSlide);
     window.addEventListener("pagehide", () => { if (mirror) send({ t: "slide-off" }); });
     deck.addKeyBinding({ keyCode: 86, key: "V", description: "Valider la question (Audience Keeper)" }, validateCurrent);
+    // P : la vue présentateur (notes, suivante, questionnaire) dans une seconde fenêtre.
+    deck.addKeyBinding({ keyCode: 80, key: "P", description: "Vue présentateur (Audience Keeper)" },
+      () => window.open("/admin/presenter", "ak-presenter", "popup,width=1280,height=800"));
   }
 
   root.AudienceKeeper = { id: "audience-keeper", init };

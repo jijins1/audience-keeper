@@ -43,8 +43,9 @@ type Classroom struct {
 	suggestions []*Suggestion
 	messages    []Message
 
-	slide    *LiveSlide
-	slideRev int64
+	slide     *LiveSlide
+	presenter *PresenterInfo
+	slideRev  int64
 }
 
 // Option configures a Classroom.
@@ -102,6 +103,7 @@ func (c *Classroom) resetLocked() {
 	c.suggestions = nil
 	c.messages = nil
 	c.slide = nil
+	c.presenter = nil
 }
 
 // Reset starts a brand new session: everything is forgotten and a new code issued.

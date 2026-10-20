@@ -3,6 +3,7 @@ package web
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"sync"
 	"sync/atomic"
@@ -29,12 +30,13 @@ type envelope struct {
 
 // client is one WebSocket connection.
 type client struct {
-	studentID string // empty for the teacher
-	send      chan []byte
-	cancel    context.CancelFunc
-	mu        sync.Mutex
-	viewQID   string
-	mirroring atomic.Bool // a deck that publishes slides to students
+	studentID  string // empty for the teacher
+	send       chan []byte
+	cancel     context.CancelFunc
+	mu         sync.Mutex
+	viewQID    string
+	mirroring  atomic.Bool // a deck that publishes slides to students
+	presenting atomic.Bool // a presenter page (notes, remote control)
 }
 
 func (c *client) setView(q string) {
@@ -158,9 +160,80 @@ func (h *Hub) removeTeacher(c *client) {
 		time.AfterFunc(h.mirrorGrace, func() {
 			if !h.anyMirroring() {
 				h.room.ClearSlide()
+				h.broadcastPresenter()
 			}
 		})
 	}
+}
+
+// presenterFrame is sent to presenter pages: the live slide with the
+// teacher-only details (notes, next slide), or nothing when no deck is live.
+type presenterFrame struct {
+	Live  bool                     `json:"live"`
+	Slide *classroom.LiveSlide     `json:"slide,omitempty"`
+	Info  *classroom.PresenterInfo `json:"info,omitempty"`
+}
+
+func (h *Hub) presenterMessage() ([]byte, bool) {
+	f := presenterFrame{}
+	if s, p, ok := h.room.Presenter(); ok {
+		f = presenterFrame{Live: true, Slide: &s, Info: &p}
+	}
+	return h.encode(envelope{T: "presenter", D: f})
+}
+
+func (h *Hub) pushPresenter(c *client) {
+	if b, ok := h.presenterMessage(); ok {
+		c.trySend(b)
+	}
+}
+
+// broadcastPresenter refreshes every presenter page.
+func (h *Hub) broadcastPresenter() {
+	b, ok := h.presenterMessage()
+	if !ok {
+		return
+	}
+	for _, c := range h.teachersWhere(func(c *client) bool { return c.presenting.Load() }) {
+		c.trySend(b)
+	}
+}
+
+var navActions = map[string]bool{"next": true, "prev": true, "first": true, "last": true, "pause": true}
+
+var errBadNav = errors.New("commande de navigation inconnue")
+
+var errNoDeck = errors.New("aucun diaporama ouvert : ouvre-le d'abord sur l'ordinateur relié au projecteur")
+
+// relayNav forwards a remote-control command to the open deck(s).
+func (h *Hub) relayNav(action string) error {
+	if !navActions[action] {
+		return errBadNav
+	}
+	decks := h.teachersWhere(func(c *client) bool { return c.mirroring.Load() })
+	if len(decks) == 0 {
+		return errNoDeck
+	}
+	b, ok := h.encode(envelope{T: "nav", D: map[string]string{"action": action}})
+	if !ok {
+		return errBadNav
+	}
+	for _, c := range decks {
+		c.trySend(b)
+	}
+	return nil
+}
+
+func (h *Hub) teachersWhere(keep func(*client) bool) []*client {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	var out []*client
+	for c := range h.teachers {
+		if keep(c) {
+			out = append(out, c)
+		}
+	}
+	return out
 }
 
 func (h *Hub) anyMirroring() bool {

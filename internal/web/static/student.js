@@ -112,60 +112,15 @@
 
   // ---------- live slides ----------
 
-  let deck = null;        // reveal instance, created on the first mirrored slide
-  let deckReady = null;
-  let slideRev = 0;
-  const themes = new Set();
-
-  // The slide comes from the teacher's deck. It is parsed inertly, stripped of
-  // anything active, and the page CSP forbids inline scripts anyway.
-  function sanitize(html) {
-    const doc = new DOMParser().parseFromString(`<body>${html}</body>`, "text/html");
-    const section = doc.body.querySelector("section");
-    if (!section) return null;
-    section.querySelectorAll("script, meta, base, link, object, embed, form").forEach((n) => n.remove());
-    for (const el of [section, ...section.querySelectorAll("*")]) {
-      for (const a of [...el.attributes]) {
-        const v = a.value.trim().toLowerCase();
-        if (a.name.startsWith("on") || v.startsWith("javascript:") || (a.name === "src" && v.startsWith("data:text/html"))) el.removeAttribute(a.name);
-      }
-    }
-    return document.importNode(section, true);
-  }
-
-  function loadThemes(list) {
-    for (const href of list || []) {
-      if (themes.has(href) || href.endsWith("reset.css")) continue;
-      themes.add(href);
-      const link = document.createElement("link");
-      link.rel = "stylesheet";
-      link.href = href;
-      document.head.append(link);
-    }
-  }
+  let slideView = null;
 
   function renderSlide(sl) {
     const box = $("#slide-box");
     box.classList.toggle("hidden", !sl);
     document.body.classList.toggle("live", !!sl);
-    if (!sl || sl.rev === slideRev || typeof Reveal === "undefined") return;
-    slideRev = sl.rev;
-    loadThemes(sl.themes);
-    const section = sanitize(sl.html);
-    if (!section) return;
-    box.querySelector(".slides").replaceChildren(section);
-    const go = () => { deck.sync(); deck.slide(0, 0, sl.fragment); };
-    if (!deck) {
-      deck = new Reveal(box.querySelector(".reveal"), {
-        embedded: true, controls: false, progress: false, keyboard: false, touch: false, overview: false,
-        help: false, hash: false, history: false, mouseWheel: false, transition: "none", backgroundTransition: "none",
-        center: true, fragmentInURL: false, previewLinks: false, jumpToSlide: false, slideNumber: false,
-        // reveal 5 switches phones (< 435 px) to its scroll view, which breaks on a one-slide deck
-        view: null, scrollActivationWidth: null,
-      });
-      deckReady = deck.initialize();
-    }
-    deckReady.then(go);
+    if (!sl) return;
+    slideView = slideView || AKSlideView.create(box);
+    slideView.render(sl.html, sl.fragment, sl.themes);
   }
 
   // ---------- rendering ----------

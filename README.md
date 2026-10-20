@@ -134,6 +134,25 @@ disponible. Les diaporamas exigent la connexion enseignant.
 - Le tableau de bord reste utilisable en parallèle, par exemple sur ton laptop pendant que le diaporama est projeté.
 - La vue présentateur (touche **S**) fonctionne : seule la fenêtre principale pilote les questions.
 
+### Vue présentateur et télécommande
+
+Comme dans PowerPoint, le diaporama va sur le projecteur et la **vue présentateur** sur ton
+écran. Ouvre-la avec la touche **P** dans le diaporama, ou avec le lien du tableau de bord
+(`/admin/presenter`). Elle affiche :
+- la slide actuelle et la suivante ;
+- tes notes (`<aside class="notes">`), visibles par toi seul ;
+- le chrono et l'heure ;
+- le **panneau de la question** de la slide : réponses en direct, bouton **Valider**.
+
+Elle pilote le diaporama : boutons, flèches, espace, PageUp/PageDown (les télécommandes USB),
+**B** pour l'écran noir, **V** pour valider, **T** pour remettre le chrono à zéro.
+
+**Sur téléphone**, la même page devient une télécommande : gros boutons, notes et question.
+Pour la connecter sans taper de jeton, clique sur **📱 Téléphone** dans la vue présentateur et
+scanne le QR code : il est **à usage unique, valable 2 minutes**, et ouvre une session
+enseignant, donc ne le projette pas. Les commandes passent par le serveur : le téléphone peut
+être en 4G, sans être sur le wifi de la salle. L'écran du téléphone reste allumé pendant le cours.
+
 ### Diaporama en direct chez les étudiants
 
 La slide projetée s'affiche **en direct sur l'écran des étudiants**, fragments compris, et le

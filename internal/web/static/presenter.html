@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#12151a">
+  <title>Audience Keeper · Présentateur</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/presenter.css">
+  <script src="/static/vendor/reveal/reveal.js" defer></script>
+  <script src="/static/slideview.js" defer></script>
+  <script src="/static/presenter.js" defer></script>
+</head>
+<body class="presenter">
+  <header class="p-top">
+    <span class="status-dot" id="dot" title="Connexion temps réel"></span>
+    <strong id="deck-title">Aucun diaporama</strong>
+    <span id="position" class="muted"></span>
+    <span class="spacer"></span>
+    <span class="p-clock" id="timer" title="Temps écoulé (T pour remettre à zéro)">00:00</span>
+    <button id="timer-reset" class="small" type="button" title="Remettre le chrono à zéro">↺</button>
+    <span class="p-clock muted p-desktop" id="clock"></span>
+    <button id="pair" class="small p-desktop" type="button" title="Connecter mon téléphone comme télécommande">📱 Téléphone</button>
+    <a class="small p-desktop" href="/admin" target="_blank">Tableau de bord</a>
+  </header>
+
+  <p id="no-deck" class="panel p-empty hidden">
+    Ouvre ton diaporama sur l'ordinateur relié au projecteur (<a href="/deck/" target="_blank">liste des diaporamas</a>) :
+    cette page le suivra et le pilotera.
+  </p>
+
+  <main class="p-grid">
+    <section class="p-current">
+      <div id="current" class="slide-box p-slide"><div class="reveal"><div class="slides"></div></div></div>
+    </section>
+    <aside class="p-side">
+      <div class="p-label">Suivante</div>
+      <div id="next" class="slide-box p-slide p-next"><div class="reveal"><div class="slides"></div></div></div>
+      <p id="next-end" class="muted hidden">Fin du diaporama</p>
+      <div class="p-label">Notes</div>
+      <div id="notes" class="p-notes"></div>
+    </aside>
+  </main>
+
+  <section id="quiz" class="panel p-quiz hidden">
+    <div class="row">
+      <strong id="q-title"></strong>
+      <span class="spacer"></span>
+      <span id="q-status" class="chip"></span>
+    </div>
+    <div id="q-count" class="p-count"></div>
+    <div id="q-bars" class="bars"></div>
+    <div class="row">
+      <button id="q-open" class="primary hidden" type="button">Ouvrir la question</button>
+      <button id="q-close" class="primary hidden" type="button">Valider<span class="p-desktop"> (V)</span></button>
+    </div>
+  </section>
+
+  <nav class="p-nav">
+    <button id="nav-prev" type="button" title="Précédente (←)">◀<span class="p-desktop"> Précédente</span></button>
+    <button id="nav-pause" type="button" title="Écran noir (B)">⏸</button>
+    <button id="nav-next" class="primary" type="button" title="Suivante (→, espace)"><span class="p-desktop">Suivante </span>▶</button>
+  </nav>
+
+  <div id="pair-overlay" class="overlay hidden">
+    <div class="panel">
+      <h2>Télécommande sur téléphone</h2>
+      <img id="pair-img" alt="QR code pour connecter le téléphone">
+      <p class="muted">Scanne ce code avec ton téléphone. Il ouvre une session enseignant :
+        ne le projette pas. Valable 2 minutes, une seule fois.</p>
+      <div class="row"><button id="pair-new" type="button">Nouveau code</button><button id="pair-close" type="button">Fermer</button></div>
+    </div>
+  </div>
+</body>
+</html>

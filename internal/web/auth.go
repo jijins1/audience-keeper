@@ -25,14 +25,19 @@ type adminAuth struct {
 	failures *ipLimiter // failed login attempts, per client IP
 	mu       sync.Mutex
 	session  map[string]time.Time // session id -> expiry
+	pairing  map[string]time.Time // one-time phone pairing token -> expiry
 	now      func() time.Time
 }
+
+// pairingTTL bounds how long a pairing QR code stays usable.
+const pairingTTL = 2 * time.Minute
 
 func newAdminAuth(token string) *adminAuth {
 	return &adminAuth{
 		token:    []byte(token),
 		failures: newIPLimiter(rate.Every(10*time.Second), 5),
 		session:  map[string]time.Time{},
+		pairing:  map[string]time.Time{},
 		now:      time.Now,
 	}
 }
@@ -48,6 +53,12 @@ func (a *adminAuth) login(w http.ResponseWriter, r *http.Request, token string) 
 		a.failures.allow(ip)
 		return false
 	}
+	a.startSession(w, r)
+	return true
+}
+
+// startSession issues a fresh teacher session cookie.
+func (a *adminAuth) startSession(w http.ResponseWriter, r *http.Request) {
 	id := randomID()
 	a.mu.Lock()
 	now := a.now()
@@ -70,6 +81,40 @@ func (a *adminAuth) login(w http.ResponseWriter, r *http.Request, token string) 
 		Secure:   isHTTPS(r),
 		SameSite: http.SameSiteStrictMode,
 	})
+}
+
+// newPairing issues a one-time token that logs a second device (the phone)
+// in. Only a logged-in teacher can obtain one.
+func (a *adminAuth) newPairing() string {
+	t := randomID()
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	now := a.now()
+	for k, exp := range a.pairing {
+		if now.After(exp) {
+			delete(a.pairing, k)
+		}
+	}
+	a.pairing[t] = now.Add(pairingTTL)
+	return t
+}
+
+// pair consumes a pairing token: valid once, before it expires.
+func (a *adminAuth) pair(w http.ResponseWriter, r *http.Request, token string) bool {
+	ip := clientIP(r)
+	if a.failures.exhausted(ip) {
+		return false
+	}
+	a.mu.Lock()
+	exp, ok := a.pairing[token]
+	delete(a.pairing, token)
+	valid := ok && a.now().Before(exp)
+	a.mu.Unlock()
+	if !valid {
+		a.failures.allow(ip)
+		return false
+	}
+	a.startSession(w, r)
 	return true
 }
 

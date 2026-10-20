@@ -95,6 +95,14 @@ func (s *Server) Handler() http.Handler {
 	// assets (images, CSS, media) are public so mirrored slides render for students.
 	mux.Handle("GET /deck/", s.deckRoute())
 
+	// Presenter view (laptop) and remote control (phone): same page.
+	mux.Handle("GET /admin/presenter", s.auth.requirePage(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Security-Policy", studentCSP) // renders slides with their themes
+		s.page("presenter.html")(w, r)
+	})))
+	mux.Handle("GET /admin/pair.png", s.auth.require(http.HandlerFunc(s.handlePairQR)))
+	mux.HandleFunc("GET /admin/pair", s.handlePair)
+
 	if s.mcp != nil {
 		mux.Handle("/mcp", s.mcp)
 	}
@@ -211,16 +219,19 @@ func (s *Server) handleJoin(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Server) joinURL(r *http.Request) string {
-	base := strings.TrimRight(s.cfg.PublicURL, "/")
-	if base == "" {
-		scheme := "http"
-		if isHTTPS(r) {
-			scheme = "https"
-		}
-		base = scheme + "://" + r.Host
+func (s *Server) baseURL(r *http.Request) string {
+	if base := strings.TrimRight(s.cfg.PublicURL, "/"); base != "" {
+		return base
 	}
-	return base + "/?code=" + url.QueryEscape(s.room.Code())
+	scheme := "http"
+	if isHTTPS(r) {
+		scheme = "https"
+	}
+	return scheme + "://" + r.Host
+}
+
+func (s *Server) joinURL(r *http.Request) string {
+	return s.baseURL(r) + "/?code=" + url.QueryEscape(s.room.Code())
 }
 
 func (s *Server) handleJoinURL(w http.ResponseWriter, r *http.Request) {
@@ -237,6 +248,41 @@ func (s *Server) handleQR(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "image/png")
 	w.Header().Set("Cache-Control", "no-store")
 	_, _ = w.Write(png)
+}
+
+// handlePairQR shows a one-time QR code that logs the phone in as the teacher.
+func (s *Server) handlePairQR(w http.ResponseWriter, r *http.Request) {
+	u := s.baseURL(r) + "/admin/pair?t=" + url.QueryEscape(s.auth.newPairing())
+	png, err := qrcode.Encode(u, qrcode.Medium, 512)
+	if err != nil {
+		s.log.Error("pair qr encode", "err", err)
+		http.Error(w, "erreur QR code", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write(png)
+}
+
+func (s *Server) handlePair(w http.ResponseWriter, r *http.Request) {
+	if !s.auth.pair(w, r, r.URL.Query().Get("t")) {
+		s.log.Warn("phone pairing refused", "remote", r.RemoteAddr)
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte("QR code expiré ou déjà utilisé : affiches-en un nouveau depuis la vue présentateur."))
+		return
+	}
+	// Not an HTTP redirect: the session cookie is SameSite=Strict, and a redirect
+	// that continues a navigation started outside the site (the QR scanner) may
+	// be sent without it. A same-origin refresh is a same-site navigation.
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write([]byte(`<!doctype html><html lang="fr"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="refresh" content="0;url=/admin/presenter"><title>Télécommande</title>
+<link rel="stylesheet" href="/static/style.css"></head>
+<body><main class="login panel"><h1>Téléphone connecté ✓</h1>
+<p><a href="/admin/presenter">Ouvrir la télécommande</a></p></main></body></html>`))
 }
 
 func (s *Server) handleExport(w http.ResponseWriter, _ *http.Request) {
