@@ -1,6 +1,7 @@
 package classroom
 
 import (
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -59,5 +60,21 @@ func TestLiveSlide(t *testing.T) {
 	c.Reset()
 	if _, ok := c.Slide(); ok {
 		t.Fatal("reset must stop mirroring")
+	}
+}
+
+func TestStudentViewHidesMessageOrigin(t *testing.T) {
+	c, _, _ := newTest(t)
+	a := mustJoin(t, c, "a")
+	_, _ = c.SendMessage(a, "du prof", false)
+	_ = c.SetAIMode(AIModeAuto)
+	_, _ = c.SuggestMessage(a, "de Claude")
+	sv, _ := c.StudentView(a)
+	b, _ := json.Marshal(sv)
+	if len(sv.Messages) != 2 || strings.Contains(strings.ToLower(string(b)), "fromai") {
+		t.Fatalf("student payload must not reveal message origin: %s", b)
+	}
+	if msgs := c.MessagesFor(a); !msgs[1].FromAI {
+		t.Fatal("the origin must still be recorded for the teacher")
 	}
 }

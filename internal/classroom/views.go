@@ -16,16 +16,24 @@ type PublicQuestion struct {
 	Choices []string     `json:"choices,omitempty"`
 }
 
+// StudentMessage is a message as a student sees it: its origin (teacher or
+// Claude) is not sent to the student page; the dashboard keeps it.
+type StudentMessage struct {
+	ID   string    `json:"id"`
+	Time time.Time `json:"time"`
+	Text string    `json:"text"`
+}
+
 // StudentView is pushed to a student page.
 type StudentView struct {
-	StudentID string          `json:"studentId"`
-	Pseudo    string          `json:"pseudo"`
-	Question  *PublicQuestion `json:"question"`
-	Draft     string          `json:"draft"`
-	Submitted bool            `json:"submitted"`
-	Value     string          `json:"value,omitempty"`
-	Messages  []Message       `json:"messages"`
-	Slide     *LiveSlide      `json:"slide"`
+	StudentID string           `json:"studentId"`
+	Pseudo    string           `json:"pseudo"`
+	Question  *PublicQuestion  `json:"question"`
+	Draft     string           `json:"draft"`
+	Submitted bool             `json:"submitted"`
+	Value     string           `json:"value,omitempty"`
+	Messages  []StudentMessage `json:"messages"`
+	Slide     *LiveSlide       `json:"slide"`
 }
 
 // StudentView builds the state of a student page.
@@ -36,9 +44,9 @@ func (c *Classroom) StudentView(sid string) (StudentView, error) {
 	if !ok {
 		return StudentView{}, ErrUnknownStudent
 	}
-	v := StudentView{StudentID: sid, Pseudo: s.Pseudo, Messages: c.messagesForLocked(sid)}
-	if v.Messages == nil {
-		v.Messages = []Message{}
+	v := StudentView{StudentID: sid, Pseudo: s.Pseudo, Messages: []StudentMessage{}}
+	for _, m := range c.messagesForLocked(sid) {
+		v.Messages = append(v.Messages, StudentMessage{ID: m.ID, Time: m.Time, Text: m.Text})
 	}
 	if c.slide != nil {
 		s := copySlide(c.slide)

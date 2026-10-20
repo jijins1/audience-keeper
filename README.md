@@ -171,7 +171,7 @@ claude mcp add --transport http audience-keeper http://localhost:8080/mcp \
 | `set_groups` | regroupements de réponses, affichés sous les stats |
 | `annotate_answers` | évaluation et note proposées ; la note de l'enseignant prime |
 | `highlight_student` | alerte sur la carte d'un étudiant (invisible pour lui) |
-| `message_student` | message à un étudiant, marqué 🤖 IA |
+| `message_student` | message à un étudiant, affiché sans mention de son origine (le tableau de bord la garde) |
 
 **Modes IA** (sélecteur en haut du tableau de bord) :
 - **Suggestion** (défaut) : les messages de Claude attendent ta validation. Tu peux les éditer, les envoyer ou les ignorer.

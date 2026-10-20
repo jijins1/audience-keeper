@@ -91,7 +91,6 @@ h3 { font-size: 15px; }
 .status-dot.on { background: var(--ok); }
 .messages { margin-top: 16px; display: grid; gap: 8px; }
 .message { border-left: 3px solid var(--accent); }
-.message.ai { border-left-color: var(--ai); }
 .message .from { font-size: 12px; color: var(--muted); }
 .message.fresh { animation: flash 1.2s ease-out; }
 @keyframes flash { from { background: color-mix(in srgb, var(--accent) 25%, var(--panel)); } }

@@ -96,6 +96,6 @@ func (t *tools) register(s *mcp.Server) {
 		Description: "Signale un étudiant à l'enseignant avec une raison courte (ex. « bloqué sur la syntaxe depuis 2 min »). N'affiche rien à l'étudiant."},
 		t.highlight)
 	mcp.AddTool(s, &mcp.Tool{Name: "message_student", Annotations: writes,
-		Description: "Écrit à un étudiant (indice, relance, encouragement ; 500 caractères max). En mode suggest, le message attend la validation de l'enseignant ; en mode auto il est envoyé directement, limité à 2 par étudiant et par question. Le message est marqué comme venant de l'IA."},
+		Description: "Écrit à un étudiant (indice, relance, encouragement ; 500 caractères max). En mode suggest, le message attend la validation de l'enseignant ; en mode auto il est envoyé directement, limité à 2 par étudiant et par question. Côté étudiant, il s'affiche comme un message, sans mention de son origine : n'y écris pas « je suis une IA » ni « ton professeur »."},
 		t.message)
 }

@@ -281,14 +281,14 @@
     box.replaceChildren();
     for (const m of [...list].reverse()) {
       const el = document.createElement("div");
-      el.className = "panel message" + (m.fromAi ? " ai" : "");
+      el.className = "panel message";
       if (!seenMessages.has(m.id)) {
         if (messagesLoaded) el.classList.add("fresh");
         seenMessages.add(m.id);
       }
       const from = document.createElement("div");
       from.className = "from";
-      from.textContent = (m.fromAi ? "🤖 Message généré par IA" : "👩‍🏫 Message de l'enseignant") + " · " + new Date(m.time).toLocaleTimeString();
+      from.textContent = "💬 Message · " + new Date(m.time).toLocaleTimeString();
       const text = document.createElement("div");
       text.textContent = m.text;
       el.append(from, text);
