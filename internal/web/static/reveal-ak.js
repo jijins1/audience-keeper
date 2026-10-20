@@ -92,7 +92,7 @@
     ws.onmessage = (ev) => {
       let m;
       try { m = JSON.parse(ev.data); } catch { return; }
-      if (m.t === "teacher") { tv = m.d; refresh(); }
+      if (m.t === "teacher") { tv = m.d; applyPendingValidate(); refresh(); }
       else if (m.t === "nav") navigate(m.d.action);
       else if (m.t === "error" && current) { current.problems = [...current.problems, m.d.msg].slice(-3); refresh(); }
     };
@@ -127,7 +127,7 @@
 
   function titleOf(slide) {
     if (slide.dataset.akTitle) return slide.dataset.akTitle;
-    const heading = slide.querySelector("h1, h2, h3");
+    const heading = slide.querySelector("h1, h2, h3, h4, h5, h6");
     return heading ? heading.textContent.trim().slice(0, 300) : "";
   }
 
@@ -361,9 +361,23 @@
     }
   }
 
+  // V right after a question opened can come before the server's update: it
+  // is then kept, and applied once the question shows as open.
+  let pendingValidate = "";
+
   function validateCurrent() {
-    const q = current && byKey(current.key);
+    if (!current) return;
+    const q = byKey(current.key);
     if (q && q.status === "open") send({ t: "close", q: q.id });
+    else if (!q || q.status === "proposed") pendingValidate = current.key;
+  }
+
+  function applyPendingValidate() {
+    if (!pendingValidate) return;
+    if (!current || current.key !== pendingValidate) { pendingValidate = ""; return; }
+    const q = byKey(pendingValidate);
+    if (q && q.status === "open") send({ t: "close", q: q.id });
+    if (q && q.status !== "proposed") pendingValidate = "";
   }
 
   function refresh() {

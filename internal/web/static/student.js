@@ -122,10 +122,25 @@
     const box = $("#slide-box");
     box.classList.toggle("hidden", !sl);
     document.body.classList.toggle("live", !!sl);
-    if (!sl) return;
+    if (!sl) { matchSlideBackground(); return; }
     slideView = slideView || AKSlideView.create(box);
     slideView.render(sl.html, sl.fragment, sl.themes);
+    requestAnimationFrame(matchSlideBackground);
   }
+
+  // The page takes the slide's background (set by the deck's theme), with
+  // text colours that stay readable on it.
+  function matchSlideBackground() {
+    const live = document.body.classList.contains("live");
+    const m = live && /rgba?\(([\d.]+), ([\d.]+), ([\d.]+)(?:, ([\d.]+))?\)/.exec(getComputedStyle($("#slide-box .reveal")).backgroundColor);
+    const opaque = m && (m[4] === undefined || Number(m[4]) > 0.5);
+    document.body.style.setProperty("--live-bg", opaque ? m[0] : "");
+    const lum = opaque ? (0.2126 * m[1] + 0.7152 * m[2] + 0.0722 * m[3]) / 255 : -1;
+    document.body.classList.toggle("live-dark", opaque && lum < 0.5);
+    document.body.classList.toggle("live-light", opaque && lum >= 0.5);
+  }
+  // themes are stylesheets loaded on the fly: check again once they apply
+  document.addEventListener("load", (e) => { if (e.target.tagName === "LINK") matchSlideBackground(); }, true);
 
   // ---------- rendering ----------
 

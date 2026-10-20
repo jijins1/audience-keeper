@@ -121,7 +121,7 @@ function nameChecks(a, zone, out, errors) {
       if (n.from < zone.from || n.to > zone.to) return;
       const node = n.node;
       switch (n.name) {
-        case "MethodInvocation": checkCall(a, node, report); break;
+        case "MethodInvocation": checkCall(a, node, report, imp.staticImport); break;
         case "FieldAccess": checkField(a, node, report); break;
         case "Identifier": if (!imp.staticImport) checkIdentifier(a, node, report); break;
         case "TypeName": if (!imp.wildcardElsewhere) checkType(a, node, imp.names, report); break;
@@ -130,8 +130,10 @@ function nameChecks(a, zone, out, errors) {
   });
 }
 
-function checkCall(a, node, report) {
+function checkCall(a, node, report, staticImport) {
   const { tree, src, model } = a;
+  // import static ...assertEquals: an unqualified call may come from it
+  if (staticImport && !node.getChildren(".").length) return;
   const scope = scopeAt(tree, src, node.from, model);
   const mc = methodCall(node, src, scope, model);
   if (!mc || !model.complete(mc.recv.type)) return;

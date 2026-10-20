@@ -164,3 +164,14 @@ test("one brace too many is named as such", () => {
   const d = diags("    for (Ligne l : lignes) {\n    }\n    }\n    return 0;");
   assert.ok(d.some((x) => /de trop/.test(x.message)), JSON.stringify(d));
 });
+
+test("JUnit and Mockito are known (static imports included)", () => {
+  const tpl = "import static org.junit.jupiter.api.Assertions.assertEquals;\nclass Svc { int add(int a, int b) { return a + b; } }\nclass T {\n  Svc svc;\n  void t() {\n";
+  const state = EditorState.create({ doc: tpl + "    Mockito.when(svc.add(2, 3)).thenReturn(5);\n    assertEquals(5, svc.add(2, 3));\n    Mockito.verify(svc).add(2, 3);" + "\n  }\n}\n", extensions: [java()] });
+  const from = tpl.length;
+  const d = javaDiagnostics(state, { from, to: state.doc.length - 5 });
+  assert.deepEqual(d, [], JSON.stringify(d));
+  const at = tpl.length + "    Mockito.when(svc.add(2, 3)).".length;
+  const r = javaCompletion(new CompletionContext(state, at, false));
+  assert.ok(r && r.options.some((o) => o.label === "thenReturn"));
+});

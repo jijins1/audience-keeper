@@ -200,6 +200,29 @@ final class LocalDate implements Comparable<LocalDate> {
   boolean isBefore(LocalDate other); boolean isAfter(LocalDate other); boolean isLeapYear(); int compareTo(LocalDate other);
 }
 final class LocalDateTime { static LocalDateTime now(); LocalDate toLocalDate(); int getHour(); int getMinute(); LocalDateTime plusHours(long hours); boolean isBefore(LocalDateTime other); boolean isAfter(LocalDateTime other); }
+// JUnit 5 and Mockito: the course's tests use them.
+final class Assertions {
+  static void assertEquals(Object expected, Object actual); static void assertEquals(Object expected, Object actual, String message);
+  static void assertNotEquals(Object unexpected, Object actual); static void assertTrue(boolean condition); static void assertFalse(boolean condition);
+  static void assertNull(Object actual); static void assertNotNull(Object actual); static void assertSame(Object expected, Object actual);
+  static <T> T assertThrows(Class<T> expectedType, Executable executable); static void assertAll(Executable... executables); static void fail(String message);
+}
+interface Executable { void execute(); }
+final class Mockito {
+  static <T> OngoingStubbing<T> when(T methodCall); static <T> T verify(T mock); static <T> T verify(T mock, VerificationMode mode);
+  static <T> T mock(Class<T> classToMock); static <T> T spy(T object); static void verifyNoInteractions(Object... mocks);
+  static void verifyNoMoreInteractions(Object... mocks); static VerificationMode times(int wantedNumberOfInvocations);
+  static VerificationMode never(); static VerificationMode atLeastOnce(); static <T> T any(); static <T> T any(Class<T> type);
+  static <T> T eq(T value); static int anyInt(); static long anyLong(); static String anyString(); static Stubber doThrow(Throwable... toBeThrown);
+  static Stubber doNothing(); static Stubber doReturn(Object toBeReturned);
+}
+interface OngoingStubbing<T> {
+  OngoingStubbing<T> thenReturn(T value); OngoingStubbing<T> thenReturn(T value, T... values);
+  OngoingStubbing<T> thenThrow(Throwable... throwables); OngoingStubbing<T> thenAnswer(Answer<?> answer);
+}
+interface Stubber { <T> T when(T mock); }
+interface VerificationMode {}
+interface Answer<T> {}
 class Thread { static void sleep(long millis); static Thread currentThread(); void start(); void join(); void interrupt(); String getName(); }
 `;
 
@@ -216,4 +239,6 @@ Iterator Spliterator Properties Locale Currency NumberFormat DecimalFormat Simpl
 ClassCastException ArrayIndexOutOfBoundsException StringIndexOutOfBoundsException NoSuchElementException
 ConcurrentModificationException CloneNotSupportedException FileNotFoundException UncheckedIOException
 StackOverflowError OutOfMemoryError AssertionError
+ArgumentCaptor MockitoExtension ExtendWith SpringBootTest WebMvcTest DataJpaTest MockMvc MockBean Test BeforeEach AfterEach
+ResponseEntity HttpStatus RabbitTemplate Message Queue Logger LoggerFactory
 `.split(/\s+/).filter(Boolean));

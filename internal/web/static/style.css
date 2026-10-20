@@ -170,5 +170,20 @@ body.projection .bar .track { height: 34px; }
 
 /* live slides on the student page */
 body.live .student { max-width: 1100px; }
+/* While a slide is shown, the page takes the slide's background and the
+   answer sits right under it, without a card or the app title. */
+body.live { background: var(--live-bg, var(--bg)); }
+body.live .student header { margin-bottom: 6px; }
+body.live .student header h1 { display: none; }
+body.live #question.panel { background: transparent; border: 0; box-shadow: none; padding: 0; }
+body.live .slide-box { border: 0; border-radius: 0; background: transparent; }
+body.live-dark {
+  --ink: #e7eaee; --muted: #9aa3ae; --line: #2c323b; --panel: #23272e; --chip: #262c35;
+  --accent: #6d8cff; --accent-ink: #0d1120; --ok: #4cc27f; --bad: #f0695e;
+}
+body.live-light {
+  --ink: #1b1f24; --muted: #5d6673; --line: #e2e5ea; --panel: #ffffff; --chip: #eef1f5;
+  --accent: #3157d5; --accent-ink: #ffffff; --ok: #1f8a4c; --bad: #c0362c;
+}
 .slide-box { width: 100%; aspect-ratio: 960 / 700; margin-bottom: 16px; border-radius: var(--radius); overflow: hidden; border: 1px solid var(--line); background: #fff; }
 .slide-box .reveal { width: 100%; height: 100%; }
