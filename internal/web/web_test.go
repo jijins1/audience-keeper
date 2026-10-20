@@ -2,6 +2,7 @@ package web
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"io"
@@ -725,4 +726,71 @@ func statusOf(t *testing.T, c *http.Client, u string) int {
 	}
 	_ = res.Body.Close()
 	return res.StatusCode
+}
+
+func TestStaticAssetsGzipAndETag(t *testing.T) {
+	h := newHarness(t, nil)
+	type reply struct {
+		status int
+		header http.Header
+		body   []byte
+	}
+	get := func(path string, hdr map[string]string) reply {
+		t.Helper()
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, h.srv.URL+path, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for k, v := range hdr {
+			req.Header.Set(k, v)
+		}
+		// a bare transport: the default one transparently gunzips
+		res, err := (&http.Transport{DisableCompression: true}).RoundTrip(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = res.Body.Close() }()
+		body, err := io.ReadAll(res.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return reply{res.StatusCode, res.Header, body}
+	}
+	const editor = "/static/vendor/editor/ak-editor.js"
+	plain := get(editor, nil)
+	if plain.status != 200 || plain.header.Get("Content-Encoding") != "" || !strings.Contains(string(plain.body), "AKEditor") {
+		t.Fatalf("plain: %d %q", plain.status, plain.header.Get("Content-Encoding"))
+	}
+	if !strings.HasPrefix(plain.header.Get("Content-Type"), "text/javascript") || plain.header.Get("X-Content-Type-Options") != "nosniff" {
+		t.Fatalf("headers: %v", plain.header)
+	}
+
+	gz := get(editor, map[string]string{"Accept-Encoding": "br, gzip"})
+	zr, err := gzip.NewReader(bytes.NewReader(gz.body))
+	if err != nil || gz.header.Get("Content-Encoding") != "gzip" {
+		t.Fatalf("gzip: %v %q", err, gz.header.Get("Content-Encoding"))
+	}
+	unzipped, _ := io.ReadAll(zr)
+	if !bytes.Equal(unzipped, plain.body) || len(gz.body) >= len(plain.body)/2 {
+		t.Fatalf("gzip body: %d bytes for %d", len(gz.body), len(plain.body))
+	}
+	if gz.header.Get("ETag") == plain.header.Get("ETag") {
+		t.Fatal("each encoding needs its own ETag")
+	}
+
+	again := get(editor, map[string]string{"Accept-Encoding": "gzip", "If-None-Match": gz.header.Get("ETag")})
+	if again.status != http.StatusNotModified || len(again.body) != 0 {
+		t.Fatalf("revalidation: %d", again.status)
+	}
+	if refused := get(editor, map[string]string{"Accept-Encoding": "gzip;q=0"}); refused.header.Get("Content-Encoding") != "" {
+		t.Fatal("gzip;q=0 means no gzip")
+	}
+	if small := get("/static/login.js", map[string]string{"Accept-Encoding": "gzip"}); small.header.Get("Content-Encoding") != "" {
+		t.Fatal("tiny files are sent as is")
+	}
+	for _, p := range []string{"/static/nope.js", "/static/vendor", "/static/assets.go"} {
+		if res := get(p, nil); res.status != http.StatusNotFound {
+			t.Fatalf("%s: %d", p, res.status)
+		}
+	}
 }

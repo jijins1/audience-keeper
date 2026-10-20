@@ -22,7 +22,9 @@ const deckCSP = "default-src 'self'; " +
 	"script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://unpkg.com https://cdnjs.cloudflare.com; " +
 	"style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://unpkg.com https://cdnjs.cloudflare.com https://fonts.googleapis.com; " +
 	"font-src 'self' data: https:; img-src 'self' data: blob: https:; media-src 'self' https:; frame-src 'self' https:; " +
-	"connect-src 'self'; frame-ancestors 'self'; base-uri 'self'; form-action 'self'"
+	// raw.githubusercontent.com: code of a code question taken from a public
+	// repository (data-ak-context-src), fetched by the teacher's deck page.
+	"connect-src 'self' https://raw.githubusercontent.com; frame-ancestors 'self'; base-uri 'self'; form-action 'self'"
 
 // decks serves reveal.js presentations: the teacher's directory first, then
 // the embedded demo.

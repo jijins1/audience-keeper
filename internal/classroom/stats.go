@@ -110,6 +110,8 @@ func computeStats(q Question, answers []Answer, participants int) Stats {
 	case TypeText:
 		s.TextGroups = textGroups(q, submitted)
 		s.Words = topWords(submitted)
+	case TypeCode:
+		s.TextGroups = textGroups(q, submitted) // same code, whatever the layout
 	}
 	return s
 }
@@ -124,7 +126,7 @@ func IsCorrect(q Question, a Answer) Grade {
 		return GradeNone
 	}
 	for _, v := range q.Correct {
-		if normalizeText(v) == normalizeText(a.Value) {
+		if answerKey(q, v) == answerKey(q, a.Value) {
 			return GradeCorrect
 		}
 	}
@@ -214,12 +216,12 @@ func textGroups(q Question, submitted []Answer) []Bucket {
 	byKey := map[string]*Bucket{}
 	var order []string
 	for _, a := range submitted {
-		k := normalizeText(a.Value)
+		k := answerKey(q, a.Value)
 		b, ok := byKey[k]
 		if !ok {
 			b = &Bucket{Label: a.Value}
 			for _, v := range q.Correct {
-				if normalizeText(v) == k {
+				if answerKey(q, v) == k {
 					b.Correct = true
 				}
 			}

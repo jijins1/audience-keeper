@@ -36,6 +36,8 @@ type inbound struct {
 	Chars int    `json:"chars,omitempty"`
 	Ms    int64  `json:"ms,omitempty"`
 	Value string `json:"value,omitempty"`
+	// characters the code editor inserted itself (completion, indentation, undo)
+	Assisted int `json:"assisted,omitempty"`
 
 	// teacher
 	Title   string   `json:"title,omitempty"`
@@ -48,6 +50,7 @@ type inbound struct {
 	ID      string   `json:"id,omitempty"`
 	Mode    string   `json:"mode,omitempty"`
 	Key     string   `json:"key,omitempty"`
+	Code    *codeIn  `json:"code,omitempty"`
 
 	// deck mirroring
 	Deck     string   `json:"deck,omitempty"`
@@ -65,6 +68,20 @@ type inbound struct {
 	Fragments   int    `json:"fragments,omitempty"`
 	QuestionKey string `json:"questionKey,omitempty"`
 	Action      string `json:"action,omitempty"`
+}
+
+// codeIn describes a code question (language, provided code, template).
+type codeIn struct {
+	Language string `json:"language"`
+	Context  string `json:"context"`
+	Template string `json:"template"`
+}
+
+func (c *codeIn) input() *classroom.CodeInput {
+	if c == nil {
+		return nil
+	}
+	return &classroom.CodeInput{Language: c.Language, Context: c.Context, Template: c.Template}
 }
 
 func errMsg(err error) []byte {
@@ -194,7 +211,7 @@ func (s *Server) handleStudentWS(w http.ResponseWriter, r *http.Request) {
 func (s *Server) studentMessage(sid string, m inbound) error {
 	switch m.T {
 	case "draft":
-		err := s.room.UpdateDraft(sid, m.Q, m.Text)
+		err := s.room.UpdateDraftAssisted(sid, m.Q, m.Text, m.Assisted)
 		if errors.Is(err, classroom.ErrNotOpen) || errors.Is(err, classroom.ErrAlreadyAnswered) {
 			return nil // late keystrokes after validation are expected
 		}
@@ -286,7 +303,7 @@ func (s *Server) teacherMessage(m inbound) error {
 	r := s.room
 	switch m.T {
 	case "create":
-		_, err := r.CreateQuestion(classroom.NewQuestion{Title: m.Title, Type: classroom.QuestionType(m.Type), NumChoices: m.Choices, Open: m.Open, Key: m.Key})
+		_, err := r.CreateQuestion(classroom.NewQuestion{Title: m.Title, Type: classroom.QuestionType(m.Type), NumChoices: m.Choices, Open: m.Open, Key: m.Key, Code: m.Code.input()})
 		return err
 	case "open":
 		return r.OpenQuestion(m.Q)

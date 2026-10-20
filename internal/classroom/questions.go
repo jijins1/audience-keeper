@@ -1,6 +1,7 @@
 package classroom
 
 import (
+	"cmp"
 	"fmt"
 	"strings"
 )
@@ -17,6 +18,8 @@ type NewQuestion struct {
 	// Key makes creation idempotent: a question with the same key is reused
 	// (and opened if still proposed) instead of duplicated. Used by slides.
 	Key string
+	// Code describes a TypeCode question; ignored otherwise.
+	Code *CodeInput
 }
 
 // CreateQuestion adds a question, optionally opening it right away.
@@ -28,6 +31,12 @@ func (c *Classroom) CreateQuestion(nq NewQuestion) (Question, error) {
 	choices, err := choicesFor(nq.Type, nq.NumChoices)
 	if err != nil {
 		return Question{}, err
+	}
+	var code *CodeSpec
+	if nq.Type == TypeCode {
+		if code, err = newCodeSpec(nq.Code); err != nil {
+			return Question{}, err
+		}
 	}
 	by := nq.ProposedBy
 	if by == "" {
@@ -42,6 +51,10 @@ func (c *Classroom) CreateQuestion(nq NewQuestion) (Question, error) {
 		if key != "" {
 			if q := c.byKeyLocked(key); q != nil {
 				var refresh []string
+				if q.Status == StatusProposed {
+					// the slide may have been edited since: it describes the question
+					q.Title, q.Type, q.Choices, q.Code = cmp.Or(title, q.Title), nq.Type, choices, code
+				}
 				if nq.Open && q.Status == StatusProposed {
 					c.openLocked(q)
 					refresh = everyone()
@@ -63,6 +76,7 @@ func (c *Classroom) CreateQuestion(nq NewQuestion) (Question, error) {
 			Title:      title,
 			Type:       nq.Type,
 			Choices:    choices,
+			Code:       code,
 			Status:     StatusProposed,
 			ProposedBy: by,
 			CreatedAt:  c.now(),
@@ -102,7 +116,7 @@ func (c *Classroom) proposedLocked() int {
 
 func choicesFor(t QuestionType, n int) ([]string, error) {
 	switch t {
-	case TypeText, TypeNumber:
+	case TypeText, TypeNumber, TypeCode:
 		return nil, nil
 	case TypeYesNo:
 		return append([]string(nil), yesNoChoices...), nil
@@ -221,8 +235,8 @@ func (c *Classroom) SetCorrect(id string, values []string) error {
 			if err != nil {
 				return nil, err
 			}
-			if !seen[normalizeText(nv)] {
-				seen[normalizeText(nv)] = true
+			if k := answerKey(*q, nv); !seen[k] {
+				seen[k] = true
 				out = append(out, nv)
 			}
 		}
@@ -309,6 +323,7 @@ func (c *Classroom) currentLocked() *Question {
 func copyQuestion(q *Question) Question {
 	out := *q
 	out.Choices = append([]string(nil), q.Choices...)
+	out.Code = copyCode(q.Code)
 	out.Correct = append([]string(nil), q.Correct...)
 	out.Groups = make([]Group, len(q.Groups))
 	for i, g := range q.Groups {

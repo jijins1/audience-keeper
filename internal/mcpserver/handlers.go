@@ -45,6 +45,17 @@ type questionOut struct {
 	ClosedAt   string     `json:"closed_at,omitempty"`
 	Correct    []string   `json:"correct,omitempty"`
 	Groups     []groupOut `json:"groups,omitempty"`
+	Code       *codeOut   `json:"code,omitempty" jsonschema:"question de code : langage et code fourni autour de la réponse"`
+}
+
+// codeOut is the code shown around a code answer: the answer goes between
+// before and after.
+type codeOut struct {
+	Language string `json:"language"`
+	Context  string `json:"context,omitempty"`
+	Before   string `json:"before,omitempty"`
+	Starter  string `json:"starter,omitempty"`
+	After    string `json:"after,omitempty"`
 }
 
 type answerOut struct {
@@ -113,6 +124,9 @@ func toQuestion(q classroom.Question) questionOut {
 		ProposedBy: q.ProposedBy, OpenedAt: ts(q.OpenedAt), ClosedAt: ts(q.ClosedAt), Correct: q.Correct}
 	for _, g := range q.Groups {
 		out.Groups = append(out.Groups, groupOut{Label: g.Label, Comment: g.Comment, StudentIDs: g.StudentIDs})
+	}
+	if c := q.Code; c != nil {
+		out.Code = &codeOut{Language: c.Language, Context: c.Context, Before: c.Before, Starter: c.Starter, After: c.After}
 	}
 	return out
 }
@@ -263,12 +277,17 @@ func (t *tools) history(_ context.Context, _ *mcp.CallToolRequest, in studentIn)
 
 type proposeIn struct {
 	Title   string `json:"title" jsonschema:"énoncé de la question, 300 caractères max"`
-	Type    string `json:"type" jsonschema:"text, choice, yesno ou number"`
+	Type    string `json:"type" jsonschema:"text, choice, yesno, number ou code"`
 	Choices int    `json:"choices,omitempty" jsonschema:"nombre de choix pour le type choice (2 à 8, défaut 4)"`
+	// code questions
+	Language string `json:"language,omitempty" jsonschema:"type code : langage (java)"`
+	Context  string `json:"context,omitempty" jsonschema:"type code : code fourni en lecture seule (classes déjà vues en cours)"`
+	Template string `json:"template,omitempty" jsonschema:"type code : code autour de la réponse ; une ligne @@ marque la zone où l'étudiant écrit, deux lignes @@ encadrent un code de départ"`
 }
 
 func (t *tools) proposeQuestion(_ context.Context, _ *mcp.CallToolRequest, in proposeIn) (*mcp.CallToolResult, questionOut, error) {
-	q, err := t.room.CreateQuestion(classroom.NewQuestion{Title: in.Title, Type: classroom.QuestionType(in.Type), NumChoices: in.Choices, ProposedBy: "claude"})
+	q, err := t.room.CreateQuestion(classroom.NewQuestion{Title: in.Title, Type: classroom.QuestionType(in.Type), NumChoices: in.Choices, ProposedBy: "claude",
+		Code: &classroom.CodeInput{Language: in.Language, Context: in.Context, Template: in.Template}})
 	if err != nil {
 		return nil, questionOut{}, err
 	}

@@ -157,6 +157,16 @@ func TestWriteTools(t *testing.T) {
 		t.Fatal("bad type accepted")
 	}
 
+	var cq questionOut
+	f.call(t, "propose_question", map[string]any{"title": "Écris total()", "type": "code", "language": "java",
+		"context": "class Ligne { double prix; }", "template": "class S {\n  @@\n}"}, &cq)
+	if cq.Code == nil || cq.Code.Language != "java" || cq.Code.Before != "class S {\n" || cq.Code.Context == "" {
+		t.Fatalf("code question for Claude: %+v", cq.Code)
+	}
+	if res := f.call(t, "propose_question", map[string]any{"title": "x", "type": "code", "language": "cobol"}, nil); !res.IsError {
+		t.Fatal("unsupported language accepted")
+	}
+
 	f.call(t, "set_groups", map[string]any{"question_id": f.qid, "groups": []map[string]any{
 		{"label": "Bonne intuition", "student_ids": []string{f.lea}},
 		{"label": "Ne sait pas", "comment": "à relancer", "student_ids": []string{f.tom}},

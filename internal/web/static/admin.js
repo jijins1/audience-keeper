@@ -2,7 +2,7 @@
 
 (() => {
   const $ = (s) => document.querySelector(s);
-  const TYPE_LABEL = { text: "Texte libre", choice: "Choix", yesno: "Oui / Non", number: "Nombre" };
+  const TYPE_LABEL = { text: "Texte libre", choice: "Choix", yesno: "Oui / Non", number: "Nombre", code: "Code" };
   const STATUS_LABEL = { proposed: "en attente", open: "ouverte", closed: "validée" };
   const GRADE_LABEL = { correct: "✓ correct", partial: "~ partiel", wrong: "✗ faux" };
 
@@ -12,6 +12,84 @@
   let viewQ = "";         // question pinned by the teacher ("" = follow the open one)
   let newType = "text";
   let suggestionsKey = "";
+
+  // ---------- code answers ----------
+
+  // The highlighter comes with the code editor bundle, fetched on the first
+  // code question; until then code is shown as plain text.
+  let editorState = "";
+  function loadEditor() {
+    if (window.AKEditor || editorState) return;
+    editorState = "loading";
+    const script = document.createElement("script");
+    script.src = "/static/vendor/editor/ak-editor.js";
+    script.onload = () => { editorState = "ready"; highlighted.clear(); if (tv) render(); };
+    script.onerror = () => { editorState = "failed"; };
+    document.head.append(script);
+  }
+
+  // Highlighting is cached per text: drafts change one student at a time.
+  const highlighted = new Map();
+  // The answer sits inside a method: drop the common indentation to read it.
+  function dedent(code) {
+    const lines = code.split("\n");
+    const indents = lines.filter((l) => l.trim()).map((l) => l.match(/^[ \t]*/)[0].length);
+    const n = indents.length ? Math.min(...indents) : 0;
+    return n ? lines.map((l) => l.slice(Math.min(n, l.match(/^[ \t]*/)[0].length))).join("\n") : code;
+  }
+
+  function codeNodes(raw, q) {
+    const text = dedent(raw);
+    if (!window.AKEditor) { loadEditor(); return [text]; }
+    const key = q.id + "\u0000" + text;
+    let html = highlighted.get(key);
+    if (!html) {
+      // the template around the answer is enough to parse it; the provided
+      // classes (up to 32 KB) would be parsed again on every keystroke
+      const c = q.code || {};
+      const before = (c.before || "").slice(-4000);
+      const box = document.createElement("div");
+      box.append(AKEditor.highlight(text, { language: c.language, before, after: c.after || "" }));
+      html = box;
+      if (highlighted.size > 400) highlighted.clear();
+      highlighted.set(key, html);
+    }
+    return [...html.cloneNode(true).childNodes];
+  }
+
+  // Same as the server (code.go): layout and comments do not matter,
+  // identifiers keep their case. Character classes mirror Go's unicode ones.
+  const GO_SPACE = /[\t\n\v\f\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]/;
+  function codeKey(s) {
+    let out = "", quote = "", esc = false, space = false, prev = "";
+    const word = (c) => /[\p{L}\p{Nd}_$]/u.test(c);
+    const rs = [...s];
+    for (let i = 0; i < rs.length; i++) {
+      const c = rs[i];
+      if (!quote && c === "/" && (rs[i + 1] === "/" || rs[i + 1] === "*")) {
+        if (rs[i + 1] === "/") { while (i < rs.length && rs[i] !== "\n") i++; }
+        else { i += 2; while (i + 1 < rs.length && !(rs[i] === "*" && rs[i + 1] === "/")) i++; i = i + 1 < rs.length ? i + 1 : rs.length; }
+        space = true;
+        continue;
+      }
+      if (quote) {
+        out += c;
+        if (esc) esc = false; else if (c === "\\") esc = true; else if (c === quote) quote = "";
+        prev = c;
+        continue;
+      }
+      if (GO_SPACE.test(c)) { space = true; continue; }
+      if (space && word(prev) && word(c)) out += " ";
+      space = false;
+      if (c === '"' || c === "'") quote = c;
+      out += c;
+      prev = c;
+    }
+    return out;
+  }
+  const textKey = (s) => s.toLowerCase().split(/\s+/).filter(Boolean).join(" ").replace(/[\p{P}\s]+$/u, "");
+  const keyFor = (q) => (q.type === "code" ? codeKey : textKey);
+  const firstLine = (code) => (code.split("\n").map((l) => l.trim()).find((l) => l && !/^[{}]$/.test(l)) || code).slice(0, 80);
 
   /** Small DOM builder: text is always set through textContent. */
   function h(tag, attrs, ...children) {
@@ -147,6 +225,7 @@
     const s = d.stats;
     $("#v-title").textContent = q.title;
     $("#v-meta").textContent = `${TYPE_LABEL[q.type]} · ${STATUS_LABEL[q.status]}${q.proposedBy === "claude" ? " · proposée par Claude" : ""}`;
+    renderProvidedCode(q);
     $("#v-close").classList.toggle("hidden", q.status !== "open");
     $("#v-open").classList.toggle("hidden", q.status !== "proposed");
     renderTimer();
@@ -174,8 +253,9 @@
     morph($("#bars"), ...buckets.map((b) => {
       const fill = h("div", { class: "fill" });
       fill.style.width = `${(100 * b.count) / maxCount}%`;
-      return h("div", { class: "bar" + (b.correct ? " correct" : ""), "data-label": markable ? b.label : null, title: markable ? "Marquer comme correct" : "" },
-        h("span", { class: "label" }, b.label), h("div", { class: "track" }, fill), h("span", { class: "n" }, b.count));
+      const shown = q.type === "code" ? firstLine(b.label) : b.label;
+      return h("div", { class: "bar" + (b.correct ? " correct" : ""), "data-label": markable ? b.label : null, title: markable ? (q.type === "code" ? b.label + "\n\nMarquer comme correct" : "Marquer comme correct") : "" },
+        h("span", { class: "label" }, shown), h("div", { class: "track" }, fill), h("span", { class: "n" }, b.count));
     }));
 
     const words = s.words || [];
@@ -193,6 +273,21 @@
         h("strong", {}, `🤖 ${g.label}`), ` · ${g.studentIds.length}`,
         g.comment ? h("div", { class: "muted" }, g.comment) : null,
         h("div", { class: "muted private" }, g.studentIds.map((id) => nm[id] || id).join(", ")))));
+  }
+
+  function renderProvidedCode(q) {
+    const c = q.code;
+    const box = $("#v-code");
+    box.classList.toggle("hidden", !c);
+    if (!c) return;
+    const parts = [c.context, (c.before || "") + "    /* réponse */" + (c.after || "")].filter((x) => x && x.trim());
+    const text = parts.join("\n\n");
+    const pre = $("#v-code-text");
+    if (pre.dataset.src !== text) {
+      pre.dataset.src = text;
+      pre.replaceChildren(window.AKEditor ? AKEditor.highlight(text, { language: c.language }) : text);
+      if (!window.AKEditor) { pre.dataset.src = ""; loadEditor(); }
+    }
   }
 
   function renderTimer() {
@@ -245,7 +340,8 @@
     return h("div", { class: "card" + (flagged ? " flag" : "") + (st.connected ? "" : " away") },
       h("div", { class: "who" }, h("span", { class: "status-dot" + (st.connected ? " on" : "") }), st.pseudo,
         h("span", { class: "spacer" }), h("span", { class: "muted" }, state)),
-      h("div", { class: "text" + (a && !a.submitted && a.draft ? " typing" : "") }, text),
+      h("div", { class: "text" + (q && q.type === "code" ? " code-text" : "") + (a && !a.submitted && a.draft ? " typing" : "") },
+        q && q.type === "code" && text ? codeNodes(text, q) : text),
       chips.length ? h("div", { class: "row" }, chips) : null,
       a && a.aiNote ? h("div", { class: "note" }, `🤖 ${a.aiNote}`) : null,
       grades);
@@ -254,7 +350,7 @@
   function outcomeOf(q, a) {
     if (a.teacherGrade) return a.teacherGrade;
     if (!a.submitted || !q.correct || !q.correct.length) return "";
-    const norm = (s) => s.toLowerCase().split(/\s+/).filter(Boolean).join(" ").replace(/[\p{P}\s]+$/u, "");
+    const norm = keyFor(q);
     return q.correct.some((c) => norm(c) === norm(a.value)) ? "correct" : "wrong";
   }
 
@@ -288,7 +384,9 @@
 
   function create(open) {
     const n = parseInt($("#new-choices").value, 10) || 4;
-    send({ t: "create", title: $("#new-title").value, type: newType, choices: newType === "choice" ? n : 0, open });
+    const msg = { t: "create", title: $("#new-title").value, type: newType, choices: newType === "choice" ? n : 0, open };
+    if (newType === "code") msg.code = { language: "java", context: $("#new-context").value, template: $("#new-template").value };
+    send(msg);
     $("#new-title").value = "";
     if (open) setView("");
   }
@@ -299,6 +397,7 @@
     newType = b.dataset.type;
     for (const x of $("#types").children) x.setAttribute("aria-pressed", String(x === b));
     $("#choices-row").classList.toggle("hidden", newType !== "choice");
+    $("#code-row").classList.toggle("hidden", newType !== "code");
   });
   $("#create-open").addEventListener("click", () => create(true));
   $("#create-only").addEventListener("click", () => create(false));
@@ -326,7 +425,7 @@
     if (!bar || !tv.view) return;
     const q = tv.view.question;
     const label = bar.dataset.label;
-    const norm = (s) => s.toLowerCase().split(/\s+/).filter(Boolean).join(" ").replace(/[\p{P}\s]+$/u, "");
+    const norm = keyFor(q);
     const current = q.correct || [];
     const isSet = current.some((v) => norm(v) === norm(label));
     const values = isSet ? current.filter((v) => norm(v) !== norm(label)) : [...current, label];

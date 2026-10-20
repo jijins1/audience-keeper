@@ -84,7 +84,7 @@ func (t *tools) register(s *mcp.Server) {
 		Description: "Toutes les réponses d'un étudiant sur la séance, question par question, avec le résultat."},
 		t.history)
 	mcp.AddTool(s, &mcp.Tool{Name: "propose_question", Annotations: writes,
-		Description: "Propose une question à l'enseignant. Elle n'est PAS montrée aux étudiants : l'enseignant décide de l'ouvrir. Types : text, choice (A/B/C...), yesno, number."},
+		Description: "Propose une question à l'enseignant. Elle n'est PAS montrée aux étudiants : l'enseignant décide de l'ouvrir. Types : text, choice (A/B/C...), yesno, number, code (éditeur de code avec coloration et vérification de syntaxe ; language, context et template optionnels)."},
 		t.proposeQuestion)
 	mcp.AddTool(s, &mcp.Tool{Name: "set_groups", Annotations: writes,
 		Description: "Remplace les regroupements des réponses d'une question (ex. « Bonne idée mal formulée », « Confond X et Y »). Chaque groupe liste des student_id. Affiché à l'enseignant sous les stats."},

@@ -8,6 +8,31 @@
  *     Options: data-ak-id (stable key, else slide position), data-ak-keep-open
  *     (do not validate when leaving), data-ak-live-results (show bars while open).
  *
+ *   <section data-ak-question="code" data-ak-language="java" data-ak-context="Commande, Client">
+ *     <h2>Écris total()</h2>
+ *     <script type="text/x-java" data-ak-template>
+ *   class Solution extends Commande {
+ *       @@
+ *   }
+ *     </script>
+ *   </section>
+ *     A code question: students get an editor with highlighting, completion and
+ *     checks. The template (optional, never shown on the slide) is read-only
+ *     code around the answer: one @@ line marks where students write, two @@
+ *     lines enclose starter code. data-ak-context lists snippets shown above,
+ *     read-only, typically the classes explained on earlier slides:
+ *       <pre><code data-ak-snippet="Commande">class Commande { ... }</code></pre>
+ *     ("*" takes every snippet of the deck). Hidden extra context:
+ *     <script type="text/x-java" data-ak-context>...</script> in the slide.
+ *
+ *   Code from files rather than from the slides:
+ *     data-ak-context-src="code/Ligne.java, https://github.com/o/r/blob/<commit>/src/Commande.java#L5-L40"
+ *     on the question slide, and <code data-ak-src="..."> to show a file on a
+ *     slide. Files of the course (same site) or public GitHub, pinned to a
+ *     full commit hash so the code cannot change under the course (permalink:
+ *     key "y" on GitHub). #L10-L40 keeps lines 10 to 40. The deck page fetches
+ *     them; the server never does.
+ *
  *   <section data-ak-join> ... </section>   shows the QR code and join code.
  *
  *   Key V validates the current question; key P opens the presenter view
@@ -25,7 +50,7 @@
 (function (root) {
   "use strict";
 
-  const TYPES = ["text", "choice", "yesno", "number"];
+  const TYPES = ["text", "choice", "yesno", "number", "code"];
   // Paging quickly through the deck must not open (and close) every question
   // on the way: a question opens only once its slide stays on screen.
   const OPEN_DELAY_MS = 600;
@@ -69,6 +94,7 @@
       try { m = JSON.parse(ev.data); } catch { return; }
       if (m.t === "teacher") { tv = m.d; refresh(); }
       else if (m.t === "nav") navigate(m.d.action);
+      else if (m.t === "error" && current) { current.problems = [...current.problems, m.d.msg].slice(-3); refresh(); }
     };
     ws.onclose = () => {
       setBadge(false);
@@ -105,6 +131,111 @@
     return heading ? heading.textContent.trim().slice(0, 300) : "";
   }
 
+  // ---------- code questions ----------
+
+  // Text of a snippet as written, even once reveal's highlight plugin has
+  // turned it into spans (or a table, with line numbers).
+  function codeText(el) {
+    const code = el.matches("pre") && el.querySelector("code") ? el.querySelector("code") : el;
+    const cells = code.querySelectorAll(".hljs-ln-code");
+    const raw = cells.length ? [...cells].map((c) => c.textContent).join("\n") : code.textContent;
+    return raw.replace(/^\n+|\s+$/g, "");
+  }
+
+  // ---------- code from files ----------
+
+  const COMMIT = /^[0-9a-f]{40}$/;
+  const MAX_SOURCE = 64 * 1024;
+  const sources = new Map();    // spec -> Promise<string>
+  const displayed = [];         // pending loads of <code data-ak-src>
+
+  /** Where to fetch a source, and which lines to keep. Throws a readable error. */
+  function sourceOf(spec) {
+    const hash = spec.indexOf("#");
+    const href = hash < 0 ? spec : spec.slice(0, hash);
+    const lines = /^L(\d+)(?:-L(\d+))?$/.exec(hash < 0 ? "" : spec.slice(hash + 1));
+    const range = lines ? [Number(lines[1]), Number(lines[2] || lines[1])] : null;
+    let u;
+    try { u = new URL(href, location.href); } catch { throw new Error(`adresse invalide : ${spec}`); }
+    if (u.origin === location.origin) return { url: u.href, range, credentials: "same-origin" };
+    let parts;
+    if (u.protocol === "https:" && u.hostname === "github.com") {
+      const m = /^\/([^/]+)\/([^/]+)\/blob\/([^/]+)\/(.+)$/.exec(u.pathname);
+      if (!m) throw new Error(`lien GitHub vers un fichier attendu (…/blob/<commit>/chemin) : ${spec}`);
+      parts = { commit: m[3], url: `https://raw.githubusercontent.com/${m[1]}/${m[2]}/${m[3]}/${m[4]}` };
+    } else if (u.protocol === "https:" && u.hostname === "raw.githubusercontent.com") {
+      parts = { commit: u.pathname.split("/")[3] || "", url: u.origin + u.pathname };
+    } else {
+      throw new Error(`seuls les fichiers du cours et GitHub public sont acceptés : ${spec}`);
+    }
+    if (!COMMIT.test(parts.commit)) {
+      throw new Error(`lien GitHub non figé : utilise un permalien avec le commit complet (touche « y » sur GitHub) : ${spec}`);
+    }
+    return { url: parts.url, range, credentials: "omit" };
+  }
+
+  function loadSource(spec) {
+    if (!sources.has(spec)) {
+      sources.set(spec, (async () => {
+        const src = sourceOf(spec);
+        const res = await fetch(src.url, { credentials: src.credentials, signal: AbortSignal.timeout(10000) });
+        if (!res.ok) throw new Error(`${spec} : ${res.status === 404 ? "introuvable" : "erreur " + res.status}`);
+        let text = await res.text();
+        if (text.length > MAX_SOURCE) throw new Error(`${spec} : fichier trop gros`);
+        text = text.replace(/\r\n/g, "\n");
+        if (src.range) text = text.split("\n").slice(src.range[0] - 1, src.range[1]).join("\n");
+        return text.replace(/^\n+|\s+$/g, "");
+      })());
+      sources.get(spec).catch(() => {}); // reported where it is used
+    }
+    return sources.get(spec);
+  }
+
+  const specs = (attr) => (attr || "").split(",").map((x) => x.trim()).filter(Boolean);
+
+  // <code data-ak-src>: show a file on a slide (and reuse it as a snippet).
+  function loadDisplayed() {
+    const hl = deck.getPlugin && deck.getPlugin("highlight");
+    for (const el of document.querySelectorAll("[data-ak-src]")) {
+      const spec = el.dataset.akSrc.trim();
+      displayed.push(loadSource(spec).then((text) => {
+        el.textContent = text;
+        if (hl && hl.hljs && el.matches("code")) hl.hljs.highlightElement(el);
+      }).catch((e) => {
+        el.textContent = `// ${e.message}`;
+      }).finally(() => {
+        if (deck.getCurrentSlide() && deck.getCurrentSlide().contains(el)) { deck.layout(); mirrorSlide(); }
+      }));
+    }
+    // prefetch: opening a question must not wait for the network
+    for (const slide of document.querySelectorAll("[data-ak-context-src]")) specs(slide.dataset.akContextSrc).forEach(loadSource);
+  }
+
+  async function codeOf(slide) {
+    await Promise.allSettled(displayed);
+    const problems = [];
+    const snippets = new Map();
+    for (const el of document.querySelectorAll("[data-ak-snippet]")) {
+      const name = el.dataset.akSnippet.trim();
+      if (name && !snippets.has(name)) snippets.set(name, codeText(el));
+    }
+    const wanted = (slide.dataset.akContext || "").split(/[\s,]+/).filter(Boolean);
+    const names = wanted.includes("*") ? [...snippets.keys()] : wanted;
+    const missing = names.filter((n) => !snippets.has(n));
+    if (missing.length) problems.push(`extrait introuvable : ${missing.join(", ")} (data-ak-snippet)`);
+    const parts = names.filter((n) => snippets.has(n)).map((n) => snippets.get(n));
+    for (const r of await Promise.allSettled(specs(slide.dataset.akContextSrc).map(loadSource))) {
+      if (r.status === "fulfilled") parts.push(r.value);
+      else problems.push(r.reason.message);
+    }
+    for (const el of slide.querySelectorAll("script[data-ak-context]")) parts.push(codeText(el));
+    const tpl = slide.querySelector("script[data-ak-template]");
+    return {
+      code: { language: slide.dataset.akLanguage || "java", context: parts.join("\n\n"), template: tpl ? tpl.textContent.replace(/^\n+|\s+$/g, "") : "" },
+      problems,
+    };
+  }
+
   function byKey(key) {
     return tv ? tv.questions.find((q) => q.key === key) : null;
   }
@@ -120,12 +251,19 @@
     if (!isQuestion(slide)) return;
 
     const type = TYPES.includes(slide.dataset.akQuestion) ? slide.dataset.akQuestion : "text";
-    const here = { slide, key: keyOf(slide) };
+    const here = { slide, key: keyOf(slide), problems: [] };
     current = here;
     clearTimeout(openTimer);
-    openTimer = setTimeout(() => {
+    openTimer = setTimeout(async () => {
       if (current !== here) return;
-      send({ t: "create", key: here.key, title: titleOf(slide), type, choices: parseInt(slide.dataset.akChoices, 10) || 0, open: true });
+      const msg = { t: "create", key: here.key, title: titleOf(slide), type, choices: parseInt(slide.dataset.akChoices, 10) || 0, open: true };
+      if (type === "code") {
+        const c = await codeOf(slide);
+        if (current !== here) return; // left the slide while files were loading
+        msg.code = c.code;
+        here.problems = c.problems;
+      }
+      send(msg);
     }, byKey(here.key) ? 0 : OPEN_DELAY_MS);
     refresh();
   }
@@ -253,7 +391,8 @@
   function renderPanel(slide, q, detail) {
     const p = panelOf(slide);
     if (!q || !detail) {
-      p.replaceChildren(h("div", "ak-muted", "Ouverture de la question…"));
+      const problems = current && current.slide === slide ? current.problems.map((x) => h("div", "ak-warn", "⚠ " + x)) : [];
+      p.replaceChildren(h("div", "ak-muted", "Ouverture de la question…"), ...problems);
       return;
     }
     const s = detail.stats;
@@ -263,7 +402,9 @@
       q.status === "open" ? h("span", "ak-muted", " · V pour valider") : h("span", "ak-done", " · validée"),
       s.correctPct != null && q.status === "closed" ? h("span", "ak-ok", ` · ${s.correctPct} % de réussite`) : null);
     const showResults = q.status === "closed" || slide.hasAttribute("data-ak-live-results");
-    p.replaceChildren(head, showResults ? results(s) : null);
+    const problems = current && current.slide === slide && current.problems.length
+      ? h("div", "ak-warn", current.problems.map((x) => h("div", "", "⚠ " + x))) : null;
+    p.replaceChildren(...[head, problems, showResults ? results(s, q.type) : null].filter(Boolean)); // null would print "null"
     relayout(p);
   }
 
@@ -275,11 +416,15 @@
     deck.layout();
   }
 
-  function results(s) {
+  // A code answer is long: its first meaningful line stands for it.
+  const firstLine = (code) => (code.split("\n").map((l) => l.trim()).find((l) => l && !/^[{}]$/.test(l)) || code).slice(0, 80);
+
+  function results(s, type) {
     let buckets = [];
     if (s.distribution) buckets = s.distribution;
     else if (s.numeric) buckets = s.numeric.histogram;
     else if (s.textGroups) buckets = s.textGroups.slice(0, 6);
+    if (type === "code") buckets = buckets.map((b) => ({ ...b, label: firstLine(b.label) }));
     const max = Math.max(1, ...buckets.map((b) => b.count));
     const bars = h("div", "ak-bars", buckets.map((b) => {
       const fill = h("div", "ak-fill");
@@ -329,7 +474,7 @@
     injectCSS();
     connect();
     deck.on("slidechanged", (e) => { onSlide(e.currentSlide, e.previousSlide); mirrorSlide(); });
-    deck.on("ready", (e) => { onSlide(e.currentSlide, null); mirrorSlide(); });
+    deck.on("ready", (e) => { loadDisplayed(); onSlide(e.currentSlide, null); mirrorSlide(); });
     deck.on("fragmentshown", mirrorSlide);
     deck.on("fragmenthidden", mirrorSlide);
     window.addEventListener("pagehide", () => { if (mirror) send({ t: "slide-off" }); });

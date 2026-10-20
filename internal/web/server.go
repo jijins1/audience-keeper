@@ -42,6 +42,7 @@ type Server struct {
 	mcp     http.Handler
 	log     *slog.Logger
 	static  fs.FS
+	assets  *assets
 	decks   *decks
 }
 
@@ -49,6 +50,10 @@ type Server struct {
 // enforce its own authentication.
 func New(cfg Config, room *classroom.Classroom, mcpHandler http.Handler, log *slog.Logger) (*Server, error) {
 	sub, err := fs.Sub(staticFS, "static")
+	if err != nil {
+		return nil, fmt.Errorf("static files: %w", err)
+	}
+	as, err := loadAssets(sub)
 	if err != nil {
 		return nil, fmt.Errorf("static files: %w", err)
 	}
@@ -66,6 +71,7 @@ func New(cfg Config, room *classroom.Classroom, mcpHandler http.Handler, log *sl
 		mcp:     mcpHandler,
 		log:     log,
 		static:  sub,
+		assets:  as,
 	}, nil
 }
 
@@ -79,7 +85,7 @@ func (s *Server) Handler() http.Handler {
 		w.Header().Set("Content-Security-Policy", studentCSP)
 		s.page("student.html")(w, r)
 	})
-	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServerFS(s.static)))
+	mux.Handle("GET /static/", http.StripPrefix("/static/", s.assets))
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok")) })
 	mux.HandleFunc("POST /api/join", s.handleJoin)
 	mux.HandleFunc("GET /ws", s.handleStudentWS)

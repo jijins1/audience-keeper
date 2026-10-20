@@ -134,6 +134,12 @@ h3 { font-size: 15px; }
 .card .who { display: flex; align-items: center; gap: 6px; font-weight: 600; }
 .card .text { font: 13px/1.4 ui-monospace, monospace; white-space: pre-wrap; word-break: break-word; max-height: 160px; overflow: auto; background: var(--chip); border-radius: 6px; padding: 6px; min-height: 28px; }
 .card .text.typing { border-left: 3px solid var(--accent); }
+.card .text.code-text { white-space: pre; word-break: normal; max-height: 260px; tab-size: 4; }
+.code-fields { display: grid; gap: 4px; margin: 4px 0 8px; }
+.code-fields label { font-size: 13px; }
+.code-input { font: 13px/1.45 ui-monospace, Menlo, Consolas, monospace; tab-size: 4; white-space: pre; }
+.v-code { margin: 4px 0 10px; }
+.v-code summary { cursor: pointer; }
 .card .grades { display: flex; gap: 4px; }
 .card .note { font-size: 12px; color: var(--ai); }
 .feed { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; max-height: 45vh; overflow: auto; font-size: 13px; }

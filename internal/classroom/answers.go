@@ -44,11 +44,25 @@ func (c *Classroom) openForLocked(qid, sid string) (*Question, error) {
 
 // UpdateDraft records what the student is currently typing.
 func (c *Classroom) UpdateDraft(sid, qid, text string) error {
-	if err := validText(text, MaxAnswerLen); err != nil {
+	return c.UpdateDraftAssisted(sid, qid, text, 0)
+}
+
+// UpdateDraftAssisted is UpdateDraft for the code editor, which also reports
+// how many of the new characters it inserted itself since the last draft
+// (completion, auto-indentation, undo): those are not a sudden insertion.
+// Only code questions take it into account; paste and drop are never counted
+// as assisted by the editor.
+func (c *Classroom) UpdateDraftAssisted(sid, qid, text string, assisted int) error {
+	if err := validText(text, MaxCodeLen); err != nil {
 		return err
 	}
+	assisted = max(0, min(assisted, MaxCodeLen))
 	return c.mutate(func() ([]string, error) {
-		if _, err := c.openForLocked(qid, sid); err != nil {
+		q, err := c.openForLocked(qid, sid)
+		if err != nil {
+			return nil, err
+		}
+		if err := checkLen(q, text); err != nil {
 			return nil, err
 		}
 		a := c.answerLocked(qid, sid)
@@ -56,7 +70,14 @@ func (c *Classroom) UpdateDraft(sid, qid, text string) error {
 			return nil, ErrAlreadyAnswered
 		}
 		now := c.now()
-		delta := utf8.RuneCountInString(text) - utf8.RuneCountInString(a.Draft)
+		prev := a.Draft
+		if q.Type == TypeCode && a.FirstInputAt.IsZero() && q.Code != nil {
+			prev = q.Code.Starter // the editor starts with it: it was not typed
+		}
+		delta := utf8.RuneCountInString(text) - utf8.RuneCountInString(prev)
+		if q.Type == TypeCode {
+			delta -= assisted
+		}
 		if delta >= BurstThreshold && now.Sub(a.lastPasteAt) > pasteGrace {
 			a.Bursts++
 			c.addEventLocked(Event{StudentID: sid, QuestionID: qid, Kind: EventBurst, Chars: delta})
@@ -87,7 +108,7 @@ func (c *Classroom) RecordEvent(sid, qid string, ev ClientEvent) error {
 	default:
 		return ErrBadEvent
 	}
-	if ev.Chars < 0 || ev.Chars > MaxAnswerLen*4 || ev.DurationMs < 0 || ev.DurationMs > int64(24*time.Hour/time.Millisecond) {
+	if ev.Chars < 0 || ev.Chars > MaxCodeLen*4 || ev.DurationMs < 0 || ev.DurationMs > int64(24*time.Hour/time.Millisecond) {
 		return ErrBadEvent
 	}
 	ev.Text = truncateRunes(ev.Text, MaxPasteExcerpt)
@@ -130,12 +151,15 @@ func (c *Classroom) RecordEvent(sid, qid string, ev ClientEvent) error {
 
 // Submit records the final answer of a student. One answer per question.
 func (c *Classroom) Submit(sid, qid, value string) error {
-	if err := validText(value, MaxAnswerLen); err != nil {
+	if err := validText(value, MaxCodeLen); err != nil {
 		return err
 	}
 	return c.mutate(func() ([]string, error) {
 		q, err := c.openForLocked(qid, sid)
 		if err != nil {
+			return nil, err
+		}
+		if err := checkLen(q, value); err != nil {
 			return nil, err
 		}
 		a := c.answerLocked(qid, sid)
@@ -151,7 +175,7 @@ func (c *Classroom) Submit(sid, qid, value string) error {
 			a.FirstInputAt = now
 		}
 		a.Value = v
-		if q.Type == TypeText || q.Type == TypeNumber {
+		if q.Type == TypeText || q.Type == TypeNumber || q.Type == TypeCode {
 			a.Draft = value
 		}
 		a.Submitted = true
@@ -217,6 +241,15 @@ func (c *Classroom) answersLocked(qid string) []Answer {
 	return out
 }
 
+// checkLen applies the answer limit of the question type: code answers can be
+// longer than text ones.
+func checkLen(q *Question, s string) error {
+	if q.Type != TypeCode && utf8.RuneCountInString(s) > MaxAnswerLen {
+		return ErrTooLong
+	}
+	return nil
+}
+
 // normalizeValue validates a submitted value against the question type.
 func normalizeValue(q *Question, raw string) (string, error) {
 	v := strings.TrimSpace(raw)
@@ -224,6 +257,8 @@ func normalizeValue(q *Question, raw string) (string, error) {
 		return "", ErrEmpty
 	}
 	switch q.Type {
+	case TypeCode:
+		return normalizeCode(raw), nil // indentation is part of the answer
 	case TypeChoice, TypeYesNo:
 		for _, ch := range q.Choices {
 			if strings.EqualFold(ch, v) {

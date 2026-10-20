@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Audience Keeper · Enseignant</title>
   <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/code.css">
   <script src="/static/admin.js" defer></script>
 </head>
 <body>
@@ -43,10 +44,17 @@
             <button type="button" data-type="choice" aria-pressed="false">A / B / C / D</button>
             <button type="button" data-type="yesno" aria-pressed="false">Oui / Non</button>
             <button type="button" data-type="number" aria-pressed="false">Nombre</button>
+            <button type="button" data-type="code" aria-pressed="false">Code Java</button>
           </div>
           <label id="choices-row" class="row hidden"><span class="muted">Nombre de choix</span>
             <input id="new-choices" type="number" min="2" max="8" value="4">
           </label>
+          <div id="code-row" class="code-fields hidden">
+            <label for="new-context" class="muted">Code fourni, en lecture seule (classes déjà vues)</label>
+            <textarea id="new-context" class="code-input" rows="5" spellcheck="false" placeholder="class Commande { ... }"></textarea>
+            <label for="new-template" class="muted">Modèle autour de la réponse : une ligne <code>@@</code> marque où l'étudiant écrit</label>
+            <textarea id="new-template" class="code-input" rows="4" spellcheck="false" placeholder="class Solution extends Commande {&#10;    @@&#10;}"></textarea>
+          </div>
           <div class="row">
             <button id="create-open" class="primary" type="button">Ouvrir la question</button>
             <button id="create-only" type="button">Préparer</button>
@@ -75,6 +83,7 @@
             <button id="v-close" class="primary" type="button">Valider</button>
             <button id="v-open" class="primary hidden" type="button">Ouvrir</button>
           </div>
+          <details id="v-code" class="v-code hidden"><summary class="muted">Code fourni aux étudiants</summary><pre class="code" id="v-code-text"></pre></details>
           <div class="kpis" id="kpis"></div>
           <p class="muted private" id="correct-hint"></p>
           <div class="bars" id="bars"></div>

@@ -57,6 +57,7 @@ const (
 	TypeChoice QuestionType = "choice"
 	TypeYesNo  QuestionType = "yesno"
 	TypeNumber QuestionType = "number"
+	TypeCode   QuestionType = "code" // code editor with syntax highlighting and checks
 )
 
 // QuestionStatus is the lifecycle of a question.
@@ -126,6 +127,7 @@ type Question struct {
 	Title      string         `json:"title"`
 	Type       QuestionType   `json:"type"`
 	Choices    []string       `json:"choices,omitempty"`
+	Code       *CodeSpec      `json:"code,omitempty"`
 	Status     QuestionStatus `json:"status"`
 	ProposedBy string         `json:"proposedBy"`
 	CreatedAt  time.Time      `json:"createdAt"`

@@ -1,0 +1,29 @@
+/* Syntax colours of the code editor (tok-* classes from @lezer/highlight),
+   shared by the editor and by highlighted answers on the dashboard. */
+:root {
+  --tok-keyword: #a626a4; --tok-type: #c18401; --tok-string: #50a14f; --tok-number: #986801;
+  --tok-comment: #8a919b; --tok-def: #4078f2; --tok-prop: #0184bc; --tok-meta: #b26a00; --tok-invalid: #c0362c;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --tok-keyword: #c792ea; --tok-type: #ffcb6b; --tok-string: #c3e88d; --tok-number: #f78c6c;
+    --tok-comment: #7f8896; --tok-def: #82aaff; --tok-prop: #89ddff; --tok-meta: #e0a23a; --tok-invalid: #f0695e;
+  }
+}
+.tok-keyword, .tok-modifier, .tok-controlKeyword, .tok-operatorKeyword, .tok-definitionKeyword, .tok-moduleKeyword { color: var(--tok-keyword); }
+.tok-typeName, .tok-className, .tok-namespace { color: var(--tok-type); }
+.tok-string, .tok-string2, .tok-character, .tok-escape { color: var(--tok-string); }
+.tok-number, .tok-bool, .tok-atom, .tok-null { color: var(--tok-number); }
+.tok-comment, .tok-lineComment, .tok-blockComment, .tok-docComment { color: var(--tok-comment); font-style: italic; }
+.tok-definition, .tok-function { color: var(--tok-def); }
+.tok-propertyName { color: var(--tok-prop); }
+.tok-meta, .tok-annotation { color: var(--tok-meta); }
+.tok-invalid { color: var(--tok-invalid); }
+.cm-ak-locked .tok-keyword, .cm-ak-locked .tok-typeName, .cm-ak-locked .tok-definition { opacity: .85; }
+
+/* highlighted code outside the editor */
+pre.code { margin: 0; padding: 8px 10px; background: var(--chip); border-radius: 8px; overflow: auto; max-height: 360px;
+  font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre; tab-size: 4; }
+.code-hint { font-size: 13px; margin: 6px 0 0; }
+textarea.code-fallback { font: 14px/1.5 ui-monospace, Menlo, Consolas, monospace; min-height: 240px; tab-size: 4; white-space: pre; }
+body.coding .student { max-width: 1000px; }

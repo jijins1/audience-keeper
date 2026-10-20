@@ -69,7 +69,7 @@ l'upgrade WebSocket sur `/ws` et `/admin/ws`.
 
 ## Déroulé d'une question
 
-1. Dans **Nouvelle question**, saisis l'énoncé (optionnel) et choisis le type : texte libre, A/B/C/D, oui/non ou nombre.
+1. Dans **Nouvelle question**, saisis l'énoncé (optionnel) et choisis le type : texte libre, A/B/C/D, oui/non, nombre ou code Java (voir [Questions de code](#questions-de-code)).
 2. **Ouvrir la question** : elle apparaît chez tous les étudiants. Ouvrir une question en valide automatiquement une autre restée ouverte.
 3. Pendant la question, chaque carte étudiant montre le brouillon en direct, avec 📋 collages, ⚡ ajouts soudains, ↗ sorties de page.
 4. **Valider** : les réponses sont figées, et les brouillons non envoyés sont soumis automatiquement (marqués « auto »).
@@ -116,7 +116,7 @@ disponible. Les diaporamas exigent la connexion enseignant.
 
 | Attribut | Rôle |
 |---|---|
-| `data-ak-question="text\|choice\|yesno\|number"` | slide-question (titre : `data-ak-title`, sinon le premier titre de la slide) |
+| `data-ak-question="text\|choice\|yesno\|number\|code"` | slide-question (titre : `data-ak-title`, sinon le premier titre de la slide) |
 | `data-ak-choices="3"` | nombre de choix pour `choice` (défaut 4) |
 | `data-ak-id="..."` | identifiant stable, recommandé si tu réordonnes tes slides |
 | `data-ak-keep-open` | ne pas valider en quittant la slide |
@@ -133,6 +133,95 @@ disponible. Les diaporamas exigent la connexion enseignant.
 - Passer vite sur une slide (moins de 0,6 s) n'ouvre pas sa question.
 - Le tableau de bord reste utilisable en parallèle, par exemple sur ton laptop pendant que le diaporama est projeté.
 - La vue présentateur (touche **S**) fonctionne : seule la fenêtre principale pilote les questions.
+
+### Questions de code
+
+Pour une question de code, l'étudiant écrit dans un éditeur Java :
+- coloration syntaxique ;
+- autocomplétion des classes, champs et méthodes, y compris celles que tu as fournies ;
+- erreurs de syntaxe soulignées pendant la frappe ;
+- avertissements sur les noms qui n'existent pas, avec une suggestion (« Tu voulais dire
+  « getPrix » ? »).
+
+Tout se passe dans le navigateur : le serveur ne compile ni n'exécute rien.
+
+```html
+<!-- une slide d'explication : le code affiché sert aussi de contexte -->
+<section>
+  <pre><code data-ak-snippet="Commande">class Commande {
+    protected List&lt;Ligne&gt; lignes = new ArrayList&lt;&gt;();
+}</code></pre>
+</section>
+
+<!-- plus loin, la question -->
+<section data-ak-question="code" data-ak-language="java" data-ak-context="Ligne, Commande" data-ak-id="total">
+  <h2>Écris la méthode total()</h2>
+  <script type="text/x-java" data-ak-template>
+import java.util.*;
+
+class CommandeAvecTotal extends Commande {
+    double total() {
+        @@
+    }
+}
+  </script>
+</section>
+```
+
+| Élément | Rôle |
+|---|---|
+| `data-ak-snippet="Nom"` | sur n'importe quel élément du diaporama : son code est réutilisable comme contexte |
+| `data-ak-context="A, B"` | extraits affichés en lecture seule au-dessus de la réponse ; `*` les prend tous |
+| `<script type="text/x-java" data-ak-template>` | code autour de la réponse, jamais affiché sur la slide. Une ligne `@@` marque où l'étudiant écrit ; deux lignes `@@` encadrent un code de départ modifiable. Sans `@@`, tout le modèle est modifiable. |
+| `<script type="text/x-java" data-ak-context>` | contexte supplémentaire caché, non affiché sur la slide |
+| `data-ak-context-src="code/Ligne.java, https://github.com/…"` | contexte pris dans des fichiers (voir ci-dessous) |
+| `<code data-ak-src="…">` | affiche un fichier sur une slide d'explication |
+
+**Code pris dans des fichiers ou sur GitHub.** Les classes peuvent venir d'un dépôt plutôt que des
+slides :
+
+```html
+<section>
+  <pre><code data-ak-src="https://github.com/prof/exemples/blob/3f2a…c91e/src/Compte.java"></code></pre>
+</section>
+<section data-ak-question="code"
+         data-ak-context-src="https://github.com/prof/exemples/blob/3f2a…c91e/src/Compte.java#L1-L40, code/Client.java">
+  …
+</section>
+```
+
+- **Sources acceptées** : un fichier du cours, en chemin relatif au diaporama ; ou un **dépôt
+  GitHub public**, avec un lien `…/blob/<commit>/chemin` ou `raw.githubusercontent.com`.
+- **Commit figé obligatoire** : le lien doit contenir le hash complet du commit, pour que le code
+  ne change pas sous le cours. Sur GitHub, ouvre le fichier et appuie sur **y** pour obtenir ce
+  permalien. Un lien vers une branche (`blob/main/…`) est refusé.
+- **Extraits** : `#L10-L40` ne garde que les lignes 10 à 40.
+- **Qui télécharge** : la page du diaporama, dans ton navigateur, dès l'ouverture du diaporama. Le
+  serveur ne télécharge rien. Une question s'ouvre donc sans attendre le réseau, et
+  `data-ak-src` affiche le fichier sur la slide, chez les étudiants compris.
+- **Erreurs** : un fichier introuvable, un lien non figé ou un autre site sont signalés dans le
+  panneau de la slide (⚠). La question s'ouvre quand même, avec le reste du contexte.
+- **Dépôts privés** : non pris en charge, car il faudrait un jeton. Mets plutôt ces fichiers dans
+  ton dépôt de cours, à côté des slides.
+
+- **Ce que voit l'étudiant** : le code fourni et le modèle sont grisés et non modifiables. Les
+  classes longues sont repliées et se déplient d'un clic. Les `import` sont remontés en tête.
+- **Ce qui est envoyé** : seule la zone de réponse. Ctrl + Entrée envoie la réponse, Ctrl + Espace
+  ouvre les suggestions.
+- **Résultats** : deux codes qui ne diffèrent que par les espaces, l'indentation ou les retours à
+  la ligne sont regroupés. Sur le projecteur et dans la vue présentateur, un groupe est résumé par
+  sa première ligne ; le tableau de bord montre chaque réponse en entier, colorée.
+- **Ajouts soudains** : ce que l'éditeur insère lui-même (autocomplétion, indentation, annulation)
+  n'en déclenche pas. Les collages restent détectés.
+- **Limites des vérifications** :
+  - les avertissements ne portent que sur ton code fourni, que l'éditeur connaît en entier. Les
+    classes Java standard (`String`, `List`, `Map`, streams…) servent à l'autocomplétion, mais
+    l'éditeur ne les connaît qu'en partie : il ne signale jamais une méthode inconnue sur elles ;
+  - le type des paramètres de lambda n'est pas déduit, et les génériques avancés le sont mal.
+- **Sans diaporama** : choisis **Code Java** dans le tableau de bord et colle le code fourni et le
+  modèle dans les deux champs.
+- **Poids** : l'éditeur (environ 160 Ko compressés) n'est chargé qu'à l'ouverture d'une question de
+  code.
 
 ### Vue présentateur et télécommande
 
@@ -205,9 +294,14 @@ Exemples de prompts :
 ## Développement
 
 ```sh
-make help        # cibles : test, lint, image, image-push, chart-push, dist
+make help        # cibles : test, editor, lint, image, image-push, chart-push, dist
 make test
+make editor      # reconstruit l'éditeur de code (Node 24) après une modification de build/editor
 ```
+
+L'éditeur de code (CodeMirror 6, analyse Java dans `build/editor/src`) est assemblé par esbuild
+dans `internal/web/static/vendor/editor/`, avec les licences des bibliothèques embarquées. Le
+résultat est versionné : le build Go n'a pas besoin de Node.
 
 La CI (`.github/workflows/ci.yml`) suit le même mode que warden :
 
@@ -215,6 +309,7 @@ La CI (`.github/workflows/ci.yml`) suit le même mode que warden :
    - **build** : gofmt, `go mod tidy` sans diff, build, vet, compilation croisée ;
    - **lint** : golangci-lint v2.12.2, figé ;
    - **tests** : `go test -race` ;
+   - **éditeur** : tests de l'analyse Java, et vérification que le bundle versionné correspond aux sources ;
    - **image** : démarrage en lecture seule et non-root, en-têtes de sécurité, CSP sans script
      inline, routes privées, aucun CDN ;
    - **chart** : ressources rendues vérifiées par `build/verif/chart.py`.
@@ -226,6 +321,7 @@ La CI (`.github/workflows/ci.yml`) suit le même mode que warden :
 cmd/audience-keeper   point d'entrée, configuration par variables d'environnement
 charts/audience-keeper chart Helm (pod unique, durcissement non configurable)
 build/verif           vérifications CI sur les artefacts rendus
+build/editor          sources de l'éditeur de code (CodeMirror + analyse Java), assemblé par esbuild
 internal/classroom    domaine en mémoire : élèves, questions, réponses, signaux, stats, règles
 internal/web          HTTP, WebSocket (hub temps réel), auth, pages embarquées (static/)
 internal/mcpserver    tools MCP

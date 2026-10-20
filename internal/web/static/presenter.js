@@ -130,11 +130,15 @@
     count.append(b, " réponses");
     if (s.typing) count.append(` · ${s.typing} écrivent`);
     if (s.correctPct != null) count.append(` · ${s.correctPct} % de réussite`);
-    renderBars(s);
+    renderBars(s, q.type);
   }
 
-  function renderBars(s) {
-    const buckets = s.distribution || (s.numeric && s.numeric.histogram) || (s.textGroups || []).slice(0, 5);
+  // A code answer is long: its first meaningful line stands for it.
+  const firstLine = (code) => (code.split("\n").map((l) => l.trim()).find((l) => l && !/^[{}]$/.test(l)) || code).slice(0, 80);
+
+  function renderBars(s, type) {
+    let buckets = s.distribution || (s.numeric && s.numeric.histogram) || (s.textGroups || []).slice(0, 5);
+    if (type === "code") buckets = buckets.map((b) => ({ ...b, label: firstLine(b.label) }));
     const max = Math.max(1, ...buckets.map((x) => x.count));
     $("#q-bars").replaceChildren(...buckets.map((x) => {
       const row = document.createElement("div");

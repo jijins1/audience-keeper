@@ -1,0 +1,23 @@
+{
+  "name": "audience-keeper-editor",
+  "private": true,
+  "type": "module",
+  "description": "Code editor bundle for Audience Keeper (CodeMirror 6). Output is committed in internal/web/static/vendor/editor.",
+  "scripts": {
+    "build": "esbuild src/editor.js --bundle --format=iife --minify --target=es2020 --legal-comments=eof --metafile=meta.json --outfile=../../internal/web/static/vendor/editor/ak-editor.js && node licenses.mjs ../../internal/web/static/vendor/editor/ak-editor.js && rm meta.json",
+    "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "@codemirror/autocomplete": "6.20.4",
+    "@codemirror/commands": "6.11.1",
+    "@codemirror/lang-java": "6.0.2",
+    "@codemirror/language": "6.13.1",
+    "@codemirror/lint": "6.9.7",
+    "@codemirror/state": "6.7.6",
+    "@codemirror/view": "6.43.15",
+    "@lezer/common": "1.5.3",
+    "@lezer/highlight": "1.2.5",
+    "@lezer/java": "1.1.5",
+    "esbuild": "0.28.2"
+  }
+}

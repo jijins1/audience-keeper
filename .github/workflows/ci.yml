@@ -91,6 +91,40 @@ jobs:
       - name: go test
         run: go test -race ./...
 
+  # L'éditeur de code (CodeMirror) est assemblé par esbuild et le résultat est
+  # versionné, pour que le build Go n'ait pas besoin de Node. Ce job vérifie
+  # que le fichier versionné correspond bien aux sources, et teste l'analyse
+  # Java (complétion, vérifications) sans navigateur.
+  editor:
+    name: Éditeur de code — tests et bundle à jour
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: build/editor
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: build/editor/package-lock.json
+
+      - run: npm ci
+
+      - name: Tests de l'analyse Java
+        run: npm test
+
+      - name: Le bundle versionné correspond aux sources
+        run: |
+          npm run build
+          if ! git diff --quiet -- ../../internal/web/static/vendor/editor; then
+            echo "::error::ak-editor.js n'est pas à jour : lancer « make editor » et committer le résultat"
+            git diff --stat -- ../../internal/web/static/vendor/editor
+            exit 1
+          fi
+
   image:
     name: Image — démarrage et en-têtes servis
     runs-on: ubuntu-latest
@@ -199,7 +233,7 @@ jobs:
     # Sur `main` SEULEMENT, et après TOUT le reste : une image publiée est tirée
     # par le déploiement dès qu'elle existe.
     if: github.ref == 'refs/heads/main'
-    needs: [build, lint, test, image, chart]
+    needs: [build, lint, test, editor, image, chart]
 
     # `packages: write` uniquement ici.
     permissions:
@@ -269,7 +303,7 @@ jobs:
     # Même porte que `publish`. Le binaire sert à qui fait cours depuis son
     # laptop, sans Docker ni cluster.
     if: github.ref == 'refs/heads/main'
-    needs: [build, lint, test, image, chart]
+    needs: [build, lint, test, editor, image, chart]
 
     # `contents: write` uniquement ici, pour créer la release.
     permissions:

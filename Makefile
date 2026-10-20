@@ -6,6 +6,10 @@
 test: ## Tests unitaires et d'intégration HTTP/WebSocket/MCP (sans Docker)
 	go test -race ./...
 
+.PHONY: editor
+editor: ## Reconstruit l'éditeur de code (CodeMirror) et teste l'analyse Java (Node 24)
+	cd build/editor && npm ci && npm test && npm run build
+
 .PHONY: lint
 lint: ## golangci-lint, version figée comme en CI
 	golangci-lint run ./...

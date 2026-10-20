@@ -14,6 +14,7 @@ type PublicQuestion struct {
 	Title   string       `json:"title"`
 	Type    QuestionType `json:"type"`
 	Choices []string     `json:"choices,omitempty"`
+	Code    *CodeSpec    `json:"code,omitempty"`
 }
 
 // StudentMessage is a message as a student sees it: its origin (teacher or
@@ -53,7 +54,7 @@ func (c *Classroom) StudentView(sid string) (StudentView, error) {
 		v.Slide = &s
 	}
 	if q := c.currentLocked(); q != nil {
-		v.Question = &PublicQuestion{ID: q.ID, Title: q.Title, Type: q.Type, Choices: append([]string(nil), q.Choices...)}
+		v.Question = &PublicQuestion{ID: q.ID, Title: q.Title, Type: q.Type, Choices: append([]string(nil), q.Choices...), Code: copyCode(q.Code)}
 		if a, ok := c.answers[q.ID][sid]; ok {
 			v.Draft, v.Submitted, v.Value = a.Draft, a.Submitted, a.Value
 		}
@@ -134,9 +135,22 @@ func (c *Classroom) TeacherView(viewQID string) TeacherView {
 	if q != nil {
 		answers := c.answersLocked(q.ID)
 		stats := computeStats(*q, answers, len(c.studentList))
+		limit := teacherDraftLen
+		if q.Type == TypeCode {
+			limit = teacherCodeLen
+		}
 		for i := range answers {
-			answers[i].Draft = truncateRunes(answers[i].Draft, teacherDraftLen)
-			answers[i].Value = truncateRunes(answers[i].Value, teacherDraftLen)
+			if q.Type == TypeCode && answers[i].Submitted {
+				answers[i].Draft = "" // same as the value: half the frame size
+			}
+			answers[i].Draft = truncateRunes(answers[i].Draft, limit)
+			answers[i].Value = truncateRunes(answers[i].Value, limit)
+		}
+		if q.Type == TypeCode {
+			// a longer answer is still graded from its card
+			for i := range stats.TextGroups {
+				stats.TextGroups[i].Label = truncateRunes(stats.TextGroups[i].Label, limit)
+			}
 		}
 		v.View = &QuestionDetail{Question: copyQuestion(q), Answers: answers, Stats: stats}
 	}
