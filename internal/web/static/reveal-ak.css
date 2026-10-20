@@ -1,0 +1,28 @@
+.reveal .ak-panel {
+  margin-top: 0.6em;
+  font-size: 0.55em;
+  text-align: left;
+}
+.reveal .ak-head { margin-bottom: 0.5em; }
+.reveal .ak-muted { opacity: 0.65; }
+.reveal .ak-done { opacity: 0.8; }
+.reveal .ak-ok { color: #1f8a4c; font-weight: 700; }
+.reveal .ak-bars { display: grid; gap: 0.3em; }
+.reveal .ak-bar { display: grid; grid-template-columns: minmax(3em, 32%) 1fr 3em; gap: 0.5em; align-items: center; }
+.reveal .ak-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.reveal .ak-track { background: rgba(127, 127, 127, 0.2); border-radius: 0.3em; height: 1.2em; overflow: hidden; }
+.reveal .ak-fill { background: #3157d5; height: 100%; transition: width 0.4s; }
+.reveal .ak-correct .ak-fill { background: #1f8a4c; }
+.reveal .ak-correct .ak-label::after { content: " ✓"; color: #1f8a4c; }
+.reveal .ak-n { text-align: right; font-variant-numeric: tabular-nums; }
+.reveal .ak-words { display: flex; flex-wrap: wrap; gap: 0.2em 0.8em; margin-top: 0.5em; opacity: 0.85; }
+.reveal .ak-join { display: grid; justify-items: center; gap: 0.2em; }
+.reveal .ak-qr { width: 6em; height: 6em; background: #fff; border-radius: 0.2em; margin: 0; }
+.reveal .ak-code { font-family: ui-monospace, monospace; font-weight: 700; letter-spacing: 0.15em; font-size: 1.4em; }
+.reveal .ak-url { font-size: 0.5em; opacity: 0.7; word-break: break-all; }
+.ak-badge {
+  position: fixed; top: 8px; left: 8px; z-index: 100;
+  font: 12px system-ui, sans-serif; color: #c0362c; text-decoration: none;
+  background: rgba(255, 255, 255, 0.85); padding: 2px 8px; border-radius: 999px;
+}
+.ak-badge.ok { color: #1f8a4c; opacity: 0.5; }

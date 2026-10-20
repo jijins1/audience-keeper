@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Audience Keeper · Enseignant</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/admin.js" defer></script>
+</head>
+<body>
+  <div class="admin">
+    <header class="topbar">
+      <strong>Audience Keeper</strong>
+      <span class="status-dot" id="dot" title="Connexion temps réel"></span>
+      <span class="muted">Code</span>
+      <span class="code" id="code">······</span>
+      <button id="qr-btn" type="button">QR code</button>
+      <span id="count" class="muted"></span>
+      <span id="live" class="chip hidden private"><span id="live-label"></span>
+        <button id="live-off" class="small" type="button" title="Les étudiants ne voient plus les slides">Arrêter la diffusion</button></span>
+      <span class="spacer"></span>
+      <button id="projection" type="button" aria-pressed="false" title="Masque les noms et les réponses individuelles">Mode projection</button>
+      <label class="row private"><span class="muted">IA</span>
+        <select id="aimode" title="Messages de Claude aux étudiants">
+          <option value="suggest">Suggestion (je valide)</option>
+          <option value="auto">Auto limité</option>
+        </select>
+      </label>
+      <a class="private" href="/deck/" target="_blank">Diaporamas</a>
+      <a class="private" href="/admin/export.csv">Export CSV</a>
+      <button id="reset" class="danger private" type="button">Nouvelle séance</button>
+      <form method="post" action="/admin/logout" class="private"><button type="submit" class="small">Déconnexion</button></form>
+    </header>
+
+    <div class="layout">
+      <aside class="side private">
+        <section class="panel">
+          <h3>Nouvelle question</h3>
+          <textarea id="new-title" rows="3" maxlength="300" placeholder="Énoncé (optionnel si tu la poses à l'oral)"></textarea>
+          <div class="types" id="types">
+            <button type="button" data-type="text" aria-pressed="true">Texte libre</button>
+            <button type="button" data-type="choice" aria-pressed="false">A / B / C / D</button>
+            <button type="button" data-type="yesno" aria-pressed="false">Oui / Non</button>
+            <button type="button" data-type="number" aria-pressed="false">Nombre</button>
+          </div>
+          <label id="choices-row" class="row hidden"><span class="muted">Nombre de choix</span>
+            <input id="new-choices" type="number" min="2" max="8" value="4">
+          </label>
+          <div class="row">
+            <button id="create-open" class="primary" type="button">Ouvrir la question</button>
+            <button id="create-only" type="button">Préparer</button>
+          </div>
+        </section>
+        <section class="panel">
+          <h3>Questions de la séance</h3>
+          <ul id="questions" class="qlist"></ul>
+          <p id="no-questions" class="muted">Aucune question pour l'instant.</p>
+        </section>
+      </aside>
+
+      <section class="main">
+        <div id="empty" class="panel">
+          <h2>Prêt·e à commencer</h2>
+          <p class="muted">Projette le QR code pour que les étudiants rejoignent, puis ouvre ta première question.</p>
+        </div>
+
+        <div id="view" class="panel hidden">
+          <div class="qhead">
+            <div>
+              <h2 id="v-title"></h2>
+              <div class="row muted"><span id="v-meta"></span><span id="v-timer"></span></div>
+            </div>
+            <span class="spacer"></span>
+            <button id="v-close" class="primary" type="button">Valider</button>
+            <button id="v-open" class="primary hidden" type="button">Ouvrir</button>
+          </div>
+          <div class="kpis" id="kpis"></div>
+          <p class="muted private" id="correct-hint"></p>
+          <div class="bars" id="bars"></div>
+          <div class="words" id="words"></div>
+          <div class="groups" id="groups"></div>
+        </div>
+
+        <section class="private">
+          <div class="row"><h3>Étudiants</h3><span class="spacer"></span>
+            <label class="row muted"><input type="checkbox" id="only-flagged" class="small-check"> signaux uniquement</label>
+          </div>
+          <div class="cards" id="cards"></div>
+        </section>
+      </section>
+
+      <aside class="side private">
+        <section class="panel">
+          <h3>Suggestions de Claude</h3>
+          <div id="suggestions" class="groups"></div>
+          <p id="no-suggestions" class="muted">Rien en attente.</p>
+        </section>
+        <section class="panel">
+          <h3>Alertes</h3>
+          <ul id="alerts" class="feed"></ul>
+        </section>
+      </aside>
+    </div>
+  </div>
+
+  <div id="qr" class="overlay hidden">
+    <div class="panel">
+      <img id="qr-img" alt="QR code pour rejoindre la séance">
+      <p class="joinurl" id="join-url"></p>
+      <p>Code : <span class="code" id="qr-code"></span></p>
+      <button id="qr-close" type="button">Fermer</button>
+    </div>
+  </div>
+</body>
+</html>

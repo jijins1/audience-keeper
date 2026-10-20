@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Connexion enseignant</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/login.js" defer></script>
+</head>
+<body>
+  <main class="login panel">
+    <h1>Espace enseignant</h1>
+    <form method="post" action="/admin/login">
+      <label for="token">Jeton d'accès (AK_ADMIN_TOKEN)</label>
+      <input id="token" name="token" type="password" autocomplete="current-password" required autofocus>
+      <input id="next" name="next" type="hidden" value="/admin">
+      <p id="error" class="error hidden">Jeton invalide, ou trop de tentatives : réessaie dans quelques secondes.</p>
+      <button class="primary" type="submit">Se connecter</button>
+    </form>
+  </main>
+</body>
+</html>

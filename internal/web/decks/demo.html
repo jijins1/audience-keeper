@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Démo · Les goroutines</title>
+  <link rel="stylesheet" href="/static/vendor/reveal/reset.css">
+  <link rel="stylesheet" href="/static/vendor/reveal/reveal.css">
+  <link rel="stylesheet" href="/static/vendor/reveal/theme/white.css">
+</head>
+<body>
+  <div class="reveal">
+    <div class="slides">
+      <section>
+        <h1>Les goroutines</h1>
+        <p>Démo Audience Keeper × reveal.js</p>
+      </section>
+
+      <section data-ak-join>
+        <h2>Rejoignez la séance</h2>
+      </section>
+
+      <section>
+        <h2>Une goroutine, c'est…</h2>
+        <ul>
+          <li class="fragment">une fonction exécutée de façon concurrente</li>
+          <li class="fragment">gérée par le runtime Go, pas par l'OS</li>
+          <li class="fragment">très légère : quelques Ko de pile au départ</li>
+        </ul>
+        <aside class="notes">NOTE-PRIVEE : arriver sur la slide suivante ouvre la question chez les étudiants.</aside>
+      </section>
+
+      <section data-ak-question="choice" data-ak-choices="4" data-ak-id="mot-cle">
+        <h2>Quel mot-clé lance une goroutine ?</h2>
+        <p>A. <code>go</code> &nbsp; B. <code>async</code> &nbsp; C. <code>spawn</code> &nbsp; D. <code>thread</code></p>
+      </section>
+
+      <section data-ak-question="text" data-ak-id="difference">
+        <h2>En une phrase : goroutine ou thread OS, quelle différence ?</h2>
+      </section>
+
+      <section data-ak-question="yesno" data-ak-id="chan-bloquant">
+        <h2>Envoyer sur un canal non bufferisé est-il bloquant ?</h2>
+      </section>
+
+      <section data-ak-question="number" data-ak-id="taille-pile">
+        <h2>Taille initiale de la pile d'une goroutine (en Ko) ?</h2>
+      </section>
+
+      <section>
+        <h2>Merci !</h2>
+      </section>
+    </div>
+  </div>
+
+  <script src="/static/vendor/reveal/reveal.js"></script>
+  <script src="/static/vendor/reveal/plugin/notes/notes.js"></script>
+  <script src="/static/reveal-ak.js"></script>
+  <script>
+    Reveal.initialize({ hash: true, plugins: [RevealNotes, AudienceKeeper] });
+  </script>
+</body>
+</html>
