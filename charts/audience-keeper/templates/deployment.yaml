@@ -10,6 +10,7 @@
 {{- fail "decks.image.path est relatif à la racine de l'image : sans slash initial (ex. usr/share/nginx/html)" }}
 {{- end }}
 {{- $decks := or .Values.decks.configMap .Values.decks.persistentVolumeClaim .Values.decks.image.reference }}
+{{- $state := .Values.persistence.enabled }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -17,7 +18,8 @@ metadata:
   labels:
     {{- include "ak.labels" . | nindent 4 }}
 spec:
-  # Un seul pod, et ce n'est pas un réglage : la séance est en mémoire.
+  # Un seul pod, et ce n'est pas un réglage : la séance est en mémoire (et
+  # son volume de sauvegarde ne s'attache qu'à un pod).
   replicas: 1
   strategy:
     type: Recreate
@@ -44,6 +46,11 @@ spec:
         runAsNonRoot: true
         runAsUser: 65532
         runAsGroup: 65532
+        {{- if $state }}
+        # le volume de sauvegarde doit être inscriptible par l'uid non-root
+        fsGroup: 65532
+        fsGroupChangePolicy: OnRootMismatch
+        {{- end }}
         seccompProfile:
           type: RuntimeDefault
       containers:
@@ -77,6 +84,10 @@ spec:
             - name: AK_DECKS_DIR
               value: /decks
             {{- end }}
+            {{- if $state }}
+            - name: AK_STATE_FILE
+              value: /data/session.json
+            {{- end }}
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -94,17 +105,29 @@ spec:
             periodSeconds: 20
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
-          {{- if $decks }}
+          {{- if or $decks $state }}
           volumeMounts:
+            {{- if $decks }}
             - name: decks
               mountPath: /decks
               readOnly: true
               {{- if and .Values.decks.image.reference .Values.decks.image.path }}
               subPath: {{ .Values.decks.image.path }}
               {{- end }}
+            {{- end }}
+            {{- if $state }}
+            - name: state
+              mountPath: /data
+            {{- end }}
           {{- end }}
-      {{- if $decks }}
+      {{- if or $decks $state }}
       volumes:
+        {{- if $state }}
+        - name: state
+          persistentVolumeClaim:
+            claimName: {{ .Values.persistence.existingClaim | default (printf "%s-state" (include "ak.fullname" .)) }}
+        {{- end }}
+        {{- if $decks }}
         - name: decks
           {{- if .Values.decks.configMap }}
           configMap:
@@ -118,6 +141,7 @@ spec:
             claimName: {{ .Values.decks.persistentVolumeClaim }}
             readOnly: true
           {{- end }}
+        {{- end }}
       {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:

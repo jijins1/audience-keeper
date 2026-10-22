@@ -9,4 +9,8 @@ audience-keeper {{ .Chart.AppVersion }} déployé.
   puis http://localhost:8080/admin
 {{- end }}
 
-La séance vit en mémoire : un redémarrage du pod l'efface. Exporter le CSV en fin de cours.
+{{- if .Values.persistence.enabled }}
+La séance est sauvegardée sur un volume : un redémarrage du pod ne coûte qu'une reconnexion automatique.
+{{- else }}
+persistence.enabled=false : la séance vit en mémoire et un redémarrage du pod l'efface. Exporter le CSV en fin de cours.
+{{- end }}

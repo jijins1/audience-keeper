@@ -46,6 +46,8 @@ type Classroom struct {
 	slide     *LiveSlide
 	presenter *PresenterInfo
 	slideRev  int64
+
+	rev int64 // bumped on every change, see Revision
 }
 
 // Option configures a Classroom.
@@ -110,6 +112,7 @@ func (c *Classroom) resetLocked() {
 func (c *Classroom) Reset() {
 	c.mu.Lock()
 	c.resetLocked()
+	c.rev++
 	n := c.notifier
 	c.mu.Unlock()
 	n.TeacherDirty()
@@ -135,6 +138,7 @@ func (c *Classroom) StartedAt() time.Time {
 func (c *Classroom) mutate(fn func() (refresh []string, err error)) error {
 	c.mu.Lock()
 	refresh, err := fn()
+	c.rev++ // also on error: fn may have changed state before failing
 	n := c.notifier
 	c.mu.Unlock()
 	if err != nil {
@@ -180,7 +184,7 @@ func (c *Classroom) Join(code, pseudo string) (Student, string, error) {
 		s := &Student{ID: fmt.Sprintf("s%d", c.nextStudent), Pseudo: pseudo, JoinedAt: now, LastSeen: now}
 		c.students[s.ID] = s
 		c.studentList = append(c.studentList, s.ID)
-		c.tokens[token] = s.ID
+		c.tokens[hashToken(token)] = s.ID
 		st = *s
 		return nil, nil
 	})
@@ -194,7 +198,7 @@ func (c *Classroom) Join(code, pseudo string) (Student, string, error) {
 func (c *Classroom) Authenticate(token string) (string, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	id, ok := c.tokens[token]
+	id, ok := c.tokens[hashToken(token)]
 	return id, ok
 }
 

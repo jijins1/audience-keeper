@@ -4,13 +4,14 @@
 # │ CE QUI N'EST PAS ICI EST DÉLIBÉRÉMENT ABSENT.                            │
 # │                                                                          │
 # │ Ne sont PAS configurables :                                              │
-# │   - le nombre de réplicas (1) et la stratégie `Recreate`. Toute la       │
-# │     séance vit en mémoire du processus : deux pods seraient deux salles  │
-# │     de classe distinctes, et un étudiant tomberait dans l'une ou l'autre │
-# │     selon la requête. `RollingUpdate` en ferait coexister deux le temps  │
-# │     du déploiement ;                                                     │
+# │   - le nombre de réplicas (1) et la stratégie `Recreate`. La séance vit  │
+# │     en mémoire du processus (sauvegardée sur `persistence`) : deux pods  │
+# │     seraient deux salles de classe distinctes, et un étudiant tomberait  │
+# │     dans l'une ou l'autre selon la requête. `RollingUpdate` en ferait    │
+# │     coexister deux le temps du déploiement ;                             │
 # │   - le `securityContext` : non-root, racine en lecture seule, capacités  │
-# │     retirées, seccomp. Le binaire n'écrit rien sur disque ;              │
+# │     retirées, seccomp. Le binaire n'écrit que dans le volume de          │
+# │     `persistence` ;                                                      │
 # │   - les jetons dans ce fichier. Un values.yaml finit dans un dépôt git : │
 # │     les jetons viennent d'un Secret créé à part (`auth.existingSecret`). │
 # └──────────────────────────────────────────────────────────────────────────┘
@@ -68,6 +69,20 @@ decks:
   configMap: ""
   # Ou un PVC existant, pour des diaporamas plus lourds qu'un ConfigMap (1 Mio).
   persistentVolumeClaim: ""
+
+# Sauvegarde de la séance (élèves, questions, réponses, signaux, messages,
+# session enseignant) sur un volume, toutes les 2 s et à l'arrêt. Un
+# redéploiement ne coûte alors qu'une reconnexion automatique de quelques
+# secondes, au lieu de toute la séance. Désactivée, tout est perdu à chaque
+# redémarrage du pod.
+persistence:
+  enabled: true
+  # PVC existant à utiliser ; vide, le chart en crée un (conservé par
+  # `helm uninstall`, pour ne pas jeter une séance par erreur).
+  existingClaim: ""
+  # Vide : la StorageClass par défaut du cluster (local-path sur k3s).
+  storageClass: ""
+  size: 64Mi
 
 service:
   type: ClusterIP

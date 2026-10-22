@@ -37,8 +37,36 @@ go run ./cmd/audience-keeper
 | `AK_MCP_SHOW_NAMES` | `false` | si `true`, Claude voit les pseudos ; sinon seulement `s1`, `s2`… |
 | `AK_DECKS_DIR` | vide | dossier de diaporamas reveal.js servis sous `/deck/` |
 | `AK_ALLOWED_ORIGINS` | vide | origines WebSocket supplémentaires (motifs d'hôte, séparés par des virgules) |
+| `AK_STATE_FILE` | vide | fichier où la séance est sauvegardée (voir [Persistance](#persistance-de-la-séance)) |
 
-L'état est **en mémoire** : redémarrer le serveur efface la séance. Pense à l'**Export CSV** en fin de cours.
+### Persistance de la séance
+
+Avec `AK_STATE_FILE=/chemin/session.json`, la séance est sauvegardée et relue au démarrage. Le
+chart Helm l'active par défaut, sur un volume. Un redéploiement en plein cours ne coûte alors que
+quelques secondes de reconnexion automatique :
+- **les élèves** retrouvent la question en cours, leur brouillon ou leur réponse envoyée, et leurs
+  messages, sans ressaisir le code ;
+- **toi** : le diaporama projeté, le tableau de bord, la vue présentateur et le téléphone restent
+  connectés, sans nouvelle connexion enseignant ;
+- **la séance** garde le même code, les mêmes questions, réponses, signaux, alertes et suggestions
+  de Claude.
+
+Comment c'est fait :
+- **Quand** : le fichier est écrit toutes les 2 s s'il y a eu un changement, et une dernière fois à
+  l'arrêt. Kubernetes envoie SIGTERM avant d'arrêter un pod, donc un redéploiement ne perd rien ;
+  un crash peut perdre les 2 dernières secondes.
+- **Écriture** : elle est atomique (fichier temporaire, synchronisation sur disque, renommage). Un
+  arrêt brutal laisse l'ancien fichier ou le nouveau, jamais un fichier à moitié écrit.
+- **Fichier illisible** : il est mis de côté (`session.json.illisible-<date>`) et une nouvelle
+  séance démarre. Un fichier abîmé ne bloque jamais le cours.
+- **Confidentialité** : le fichier contient les pseudos et les réponses, il est donc lisible par le
+  seul serveur (`0600`). Les jetons des élèves et les sessions enseignant n'y sont que hachés
+  (SHA-256) : le fichier ne permet pas de se faire passer pour quelqu'un.
+- **Ce qui n'est pas gardé** : la slide diffusée (le diaporama la renvoie en se reconnectant), les
+  QR de jumelage du téléphone, et les sessions MCP. Claude se reconnecte en rouvrant une session.
+
+Sans `AK_STATE_FILE`, tout reste **en mémoire** : redémarrer le serveur efface la séance. Pense à
+l'**Export CSV** en fin de cours.
 
 ### Binaire, Docker ou Kubernetes
 
@@ -62,7 +90,10 @@ helm install ak oci://ghcr.io/jijins1/charts/audience-keeper --version 0.0.N -n 
 
 Il n'y a **pas de tag `latest`** : une version publiée est immuable, sinon un nœud qui a l'image en
 cache (`IfNotPresent`) ne la retirerait jamais. Le chart impose un pod unique et la stratégie
-`Recreate`, car la séance vit en mémoire. Voir `charts/audience-keeper/values.yaml`.
+`Recreate`, car la séance vit en mémoire du processus. Il la sauvegarde sur un PVC (`persistence`,
+activé par défaut, StorageClass par défaut du cluster) que `helm uninstall` conserve. Avec
+`persistence.enabled=false`, un redémarrage du pod efface la séance. Voir
+`charts/audience-keeper/values.yaml`.
 
 Derrière un reverse proxy, transmets `X-Forwarded-Proto` (cookies `Secure`, URL du QR code) et
 l'upgrade WebSocket sur `/ws` et `/admin/ws`.
@@ -311,7 +342,7 @@ La CI (`.github/workflows/ci.yml`) suit le même mode que warden :
    - **tests** : `go test -race` ;
    - **éditeur** : tests de l'analyse Java, et vérification que le bundle versionné correspond aux sources ;
    - **image** : démarrage en lecture seule et non-root, en-têtes de sécurité, CSP sans script
-     inline, routes privées, aucun CDN ;
+     inline, routes privées, aucun CDN, séance retrouvée après un redémarrage ;
    - **chart** : ressources rendues vérifiées par `build/verif/chart.py`.
 2. **Publication**, sur `main` seulement et après tout le reste, en version `0.0.<run_number>` :
    l'image multi-arch, le chart OCI et une release GitHub des binaires, via les mêmes cibles
@@ -323,6 +354,7 @@ charts/audience-keeper chart Helm (pod unique, durcissement non configurable)
 build/verif           vérifications CI sur les artefacts rendus
 build/editor          sources de l'éditeur de code (CodeMirror + analyse Java), assemblé par esbuild
 internal/classroom    domaine en mémoire : élèves, questions, réponses, signaux, stats, règles
+internal/persist      sauvegarde atomique de la séance dans un fichier, relue au démarrage
 internal/web          HTTP, WebSocket (hub temps réel), auth, pages embarquées (static/)
 internal/mcpserver    tools MCP
 ```

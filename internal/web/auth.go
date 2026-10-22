@@ -2,8 +2,11 @@ package web
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
+	"encoding/json"
+	"fmt"
 	"net"
 	"net/http"
 	"net/url"
@@ -24,7 +27,8 @@ type adminAuth struct {
 	token    []byte
 	failures *ipLimiter // failed login attempts, per client IP
 	mu       sync.Mutex
-	session  map[string]time.Time // session id -> expiry
+	session  map[string]time.Time // sha256(session id) -> expiry
+	rev      int64                // bumped when sessions change (persistence)
 	pairing  map[string]time.Time // one-time phone pairing token -> expiry
 	now      func() time.Time
 }
@@ -67,7 +71,8 @@ func (a *adminAuth) startSession(w http.ResponseWriter, r *http.Request) {
 			delete(a.session, k)
 		}
 	}
-	a.session[id] = now.Add(adminSessionTTL)
+	a.session[hashID(id)] = now.Add(adminSessionTTL)
+	a.rev++
 	a.mu.Unlock()
 	// Secure suit le transport : en HTTP simple (wifi de salle, laptop) un cookie
 	// Secure ne serait jamais renvoyé et la connexion deviendrait impossible.
@@ -121,7 +126,8 @@ func (a *adminAuth) pair(w http.ResponseWriter, r *http.Request, token string) b
 func (a *adminAuth) logout(w http.ResponseWriter, r *http.Request) {
 	if c, err := r.Cookie(adminCookie); err == nil {
 		a.mu.Lock()
-		delete(a.session, c.Value)
+		delete(a.session, hashID(c.Value))
+		a.rev++
 		a.mu.Unlock()
 	}
 	http.SetCookie(w, &http.Cookie{Name: adminCookie, Value: "", Path: "/", MaxAge: -1, //nolint:gosec // G124: même règle que login
@@ -138,8 +144,62 @@ func (a *adminAuth) validID(id string) bool {
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	exp, ok := a.session[id]
+	exp, ok := a.session[hashID(id)]
 	return ok && a.now().Before(exp)
+}
+
+// hashID is how session ids are kept, in memory and in the state file: the
+// cookie value itself is never stored.
+func hashID(id string) string {
+	sum := sha256.Sum256([]byte(id))
+	return hex.EncodeToString(sum[:])
+}
+
+// adminState is what survives a restart: the teacher stays logged in (deck on
+// the projector, presenter view, phone). Pairing codes do not survive.
+type adminState struct {
+	Sessions map[string]time.Time `json:"sessions"`
+}
+
+// Revision changes whenever sessions change.
+func (a *adminAuth) Revision() int64 {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.rev
+}
+
+// MarshalState serialises the live teacher sessions (hashed ids).
+func (a *adminAuth) MarshalState() ([]byte, int64, error) {
+	a.mu.Lock()
+	s := adminState{Sessions: make(map[string]time.Time, len(a.session))}
+	now := a.now()
+	for h, exp := range a.session {
+		if now.Before(exp) {
+			s.Sessions[h] = exp
+		}
+	}
+	rev := a.rev
+	a.mu.Unlock()
+	data, err := json.Marshal(s)
+	return data, rev, err
+}
+
+// RestoreState brings back saved teacher sessions that have not expired.
+func (a *adminAuth) RestoreState(data []byte) error {
+	var s adminState
+	if err := json.Unmarshal(data, &s); err != nil {
+		return fmt.Errorf("sessions enseignant : %w", err)
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	now := a.now()
+	for h, exp := range s.Sessions {
+		if len(h) == sha256.Size*2 && now.Before(exp) && exp.Before(now.Add(adminSessionTTL+time.Minute)) {
+			a.session[h] = exp
+		}
+	}
+	a.rev++
+	return nil
 }
 
 func sessionID(r *http.Request) string {

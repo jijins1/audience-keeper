@@ -251,6 +251,9 @@ func (c *Classroom) ApplyRules(t Thresholds) {
 		c.applyRulesLocked(q, t)
 	}
 	changed := len(c.alerts) != before
+	if changed {
+		c.rev++
+	}
 	n := c.notifier
 	c.mu.Unlock()
 	if changed {

@@ -18,6 +18,7 @@ import (
 
 	"audience-keeper/internal/classroom"
 	"audience-keeper/internal/mcpserver"
+	"audience-keeper/internal/persist"
 	"audience-keeper/internal/web"
 )
 
@@ -32,8 +33,12 @@ type config struct {
 	publicURL      string
 	showNames      bool
 	decksDir       string
+	stateFile      string
 	allowedOrigins []string
 }
+
+// saveInterval bounds what a crash can lose; a clean stop saves everything.
+const saveInterval = 2 * time.Second
 
 func loadConfig(getenv func(string) string) (config, error) {
 	c := config{
@@ -43,6 +48,7 @@ func loadConfig(getenv func(string) string) (config, error) {
 		publicURL:  strings.TrimSpace(getenv("AK_PUBLIC_URL")),
 		showNames:  getenv("AK_MCP_SHOW_NAMES") == "true",
 		decksDir:   strings.TrimSpace(getenv("AK_DECKS_DIR")),
+		stateFile:  strings.TrimSpace(getenv("AK_STATE_FILE")),
 	}
 	if c.addr == "" {
 		c.addr = ":8080"
@@ -95,9 +101,29 @@ func run(log *slog.Logger) error {
 		return err
 	}
 
+	var saver *persist.Saver
+	if cfg.stateFile != "" {
+		saver = persist.New(cfg.stateFile, log, map[string]persist.Part{"classroom": room, "admin": server.AdminSessions()})
+		if err := saver.Load(); err != nil {
+			return err
+		}
+		// fail now rather than at the first save, in the middle of a class
+		if err := saver.Probe(); err != nil {
+			return fmt.Errorf("AK_STATE_FILE : %w", err)
+		}
+		if err := saver.Save(); err != nil {
+			return fmt.Errorf("AK_STATE_FILE : %w", err)
+		}
+	} else {
+		log.Warn("AK_STATE_FILE absent : la séance est perdue à chaque redémarrage")
+	}
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	go server.Run(ctx)
+	if saver != nil {
+		go saver.Run(ctx, saveInterval)
+	}
 
 	httpSrv := &http.Server{
 		Addr:              cfg.addr,
@@ -110,7 +136,7 @@ func run(log *slog.Logger) error {
 	}
 	errc := make(chan error, 1)
 	go func() {
-		log.Info("audience-keeper démarré", "addr", cfg.addr, "version", version, "mcp", mcpHandler != nil, "code", room.Code())
+		log.Info("audience-keeper démarré", "addr", cfg.addr, "version", version, "mcp", mcpHandler != nil, "code", room.Code(), "persistance", saver != nil)
 		errc <- httpSrv.ListenAndServe()
 	}()
 
@@ -121,8 +147,17 @@ func run(log *slog.Logger) error {
 	}
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if err := httpSrv.Shutdown(shutdownCtx); err != nil {
-		return fmt.Errorf("shutdown: %w", err)
+	shutdownErr := httpSrv.Shutdown(shutdownCtx)
+	if saver != nil {
+		// after Shutdown: the last answers are in
+		if err := saver.Save(); err != nil {
+			log.Error("dernière sauvegarde de la séance", "err", err)
+		} else {
+			log.Info("séance sauvegardée", "file", cfg.stateFile)
+		}
+	}
+	if shutdownErr != nil {
+		return fmt.Errorf("shutdown: %w", shutdownErr)
 	}
 	return nil
 }

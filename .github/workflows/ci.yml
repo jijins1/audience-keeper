@@ -203,9 +203,38 @@ jobs:
             fi
           done
 
+      # La séance survit à un redémarrage : sauvegardée dans le volume par
+      # l'uid non-root, racine toujours en lecture seule, puis relue.
+      - name: Persistance de la séance au redémarrage
+        run: |
+          # un volume nommé survit au redémarrage (un tmpfs serait vidé) ;
+          # on le donne à l'uid non-root comme le fait fsGroup dans le pod
+          docker volume create ak-state > /dev/null
+          docker run --rm -v ak-state:/data busybox chown 65532:65532 /data
+          docker run -d --name ak-state --read-only --user 65532:65532 -p 18081:8080 \
+            -v ak-state:/data \
+            -e AK_ADMIN_TOKEN=ci-admin-token-0123456789 -e AK_STATE_FILE=/data/session.json \
+            ghcr.io/${{ github.repository_owner }}/audience-keeper:ci
+          attendre() { for _ in $(seq 1 30); do curl -sf -o /dev/null http://localhost:18081/healthz && return 0; sleep 1; done; docker logs ak-state; return 1; }
+          attendre
+          code=$(docker logs ak-state 2>&1 | sed -n 's/.* code=\([A-Z0-9]*\).*/\1/p' | head -1)
+          curl -sf -X POST http://localhost:18081/api/join -H 'Content-Type: application/json' \
+            -d "{\"code\":\"$code\",\"pseudo\":\"lea\"}" > /dev/null
+          docker restart -t 10 ak-state > /dev/null   # SIGTERM : sauvegarde finale
+          attendre
+          docker logs ak-state 2>&1 | grep -q "séance restaurée" || { echo "::error::séance non restaurée"; docker logs ak-state; exit 1; }
+          rejoint=$(curl -s -o /dev/null -w '%{http_code}' -X POST http://localhost:18081/api/join \
+            -H 'Content-Type: application/json' -d "{\"code\":\"$code\",\"pseudo\":\"lea\"}")
+          if [ "$rejoint" != "409" ]; then
+            echo "::error::après redémarrage, le pseudo « lea » devrait être pris (HTTP 409), reçu $rejoint"; exit 1
+          fi
+          docker rm -f ak-state > /dev/null
+
       - name: Arrêt
         if: always()
-        run: docker rm -f ak || true
+        run: |
+          docker rm -f ak ak-state || true
+          docker volume rm ak-state || true
 
   chart:
     name: Chart — ressources rendues

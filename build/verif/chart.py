@@ -87,19 +87,43 @@ check(backend == kinds["Service"][0]["metadata"]["name"], "l'Ingress vise un Ser
 
 # 9. Diaporamas depuis une image : volume image monté au bon sous-dossier.
 img = by_kind(render("auth.existingSecret=tok", "decks.image.reference=ghcr.io/x/cours@sha256:abc"))["Deployment"][0]["spec"]["template"]["spec"]
-vol = img["volumes"][0]
+vol = next(v for v in img["volumes"] if v["name"] == "decks")
 check(vol.get("image", {}).get("reference") == "ghcr.io/x/cours@sha256:abc", "decks.image ne rend pas de volume image")
-mount = img["containers"][0]["volumeMounts"][0]
+mount = next(m for m in img["containers"][0]["volumeMounts"] if m["name"] == "decks")
 check(mount.get("subPath") == "usr/share/nginx/html" and mount.get("readOnly"), "volume image mal monté (subPath/readOnly)")
 check(render("auth.existingSecret=tok", "decks.image.reference=a", "decks.configMap=b", expect_fail=True).returncode != 0,
       "deux sources de diaporamas acceptées")
 check(render("auth.existingSecret=tok", "decks.image.reference=a", "decks.image.path=/usr", expect_fail=True).returncode != 0,
       "decks.image.path absolu accepté")
 
-# 10. Sans ingress ni diaporamas : rien de superflu.
-minimal = by_kind(render("auth.existingSecret=tok"))
+# 10. Sans ingress, diaporamas ni sauvegarde : rien de superflu.
+minimal = by_kind(render("auth.existingSecret=tok", "persistence.enabled=false"))
 check("Ingress" not in minimal, "Ingress rendu alors que ingress.enabled=false")
-check(not minimal["Deployment"][0]["spec"]["template"]["spec"].get("volumes"), "volume rendu sans diaporamas")
+mpod = minimal["Deployment"][0]["spec"]["template"]["spec"]
+check(not mpod.get("volumes"), "volume rendu sans diaporamas ni sauvegarde")
+check("PersistentVolumeClaim" not in minimal, "PVC rendu alors que persistence.enabled=false")
+check(all(e["name"] != "AK_STATE_FILE" for e in mpod["containers"][0]["env"]), "AK_STATE_FILE posé sans volume")
+
+# 11. Sauvegarde de la séance (par défaut) : un PVC conservé à la désinstallation,
+#     monté en écriture sur /data, inscriptible par l'uid non-root, et la racine
+#     reste en lecture seule.
+pvcs = kinds.get("PersistentVolumeClaim", [])
+check(len(pvcs) == 1, f"PVC de sauvegarde : {len(pvcs)} rendu(s), attendu 1")
+if pvcs:
+    check(pvcs[0]["metadata"].get("annotations", {}).get("helm.sh/resource-policy") == "keep",
+          "le PVC de la séance serait supprimé par helm uninstall")
+    claim = next((v for v in pod["volumes"] if v["name"] == "state"), {}).get("persistentVolumeClaim", {})
+    check(claim.get("claimName") == pvcs[0]["metadata"]["name"], "le pod ne monte pas le PVC rendu")
+smount = next((m for m in ctr["volumeMounts"] if m["name"] == "state"), None)
+check(smount is not None and smount["mountPath"] == "/data" and not smount.get("readOnly"), "volume de sauvegarde mal monté")
+env = {e["name"]: e.get("value") for e in ctr["env"]}
+check(env.get("AK_STATE_FILE", "").startswith("/data/"), "AK_STATE_FILE ne pointe pas dans le volume")
+check(pod["securityContext"].get("fsGroup") == 65532, "fsGroup absent : le volume ne serait pas inscriptible")
+check(ctr["securityContext"].get("readOnlyRootFilesystem") is True, "la racine doit rester en lecture seule")
+existing = by_kind(render("auth.existingSecret=tok", "persistence.existingClaim=ma-seance"))
+check("PersistentVolumeClaim" not in existing, "PVC créé alors qu'un existingClaim est fourni")
+evol = next(v for v in existing["Deployment"][0]["spec"]["template"]["spec"]["volumes"] if v["name"] == "state")
+check(evol["persistentVolumeClaim"]["claimName"] == "ma-seance", "existingClaim ignoré")
 
 if errors:
     for e in errors:

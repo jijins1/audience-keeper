@@ -75,6 +75,15 @@ func New(cfg Config, room *classroom.Classroom, mcpHandler http.Handler, log *sl
 	}, nil
 }
 
+// AdminSessions is the teacher login state, for persistence across restarts.
+func (s *Server) AdminSessions() interface {
+	Revision() int64
+	MarshalState() ([]byte, int64, error)
+	RestoreState([]byte) error
+} {
+	return s.auth
+}
+
 // Run drives the real-time hub until ctx is cancelled.
 func (s *Server) Run(ctx context.Context) { s.hub.Run(ctx) }
 
