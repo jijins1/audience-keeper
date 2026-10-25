@@ -17,6 +17,9 @@ metadata:
   name: {{ include "ak.fullname" . }}
   labels:
     {{- include "ak.labels" . | nindent 4 }}
+    {{- with .Values.deploymentLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
 spec:
   # Un seul pod, et ce n'est pas un réglage : la séance est en mémoire (et
   # son volume de sauvegarde ne s'attache qu'à un pod).
