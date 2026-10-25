@@ -114,3 +114,7 @@ nodeSelector: {}
 tolerations: []
 affinity: {}
 podAnnotations: {}
+# Labels ajoutés au Deployment lui-même (pas aux pods). Sert par exemple à
+# l'inscrire auprès d'un outil de mise en veille comme Sablier
+# (sablier.enable / sablier.group).
+deploymentLabels: {}
